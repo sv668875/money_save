@@ -3,9 +3,12 @@ import {
   AlertTriangle,
   Briefcase,
   Calendar,
+  Check,
   CheckCircle2,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
+  Clock,
   Coins,
   CreditCard,
   Home,
@@ -18,14 +21,38 @@ import {
   Store,
   Train,
   TrendingUp,
+  User,
   Utensils,
   Wallet,
   Wrench,
   X,
   Zap,
 } from 'lucide-react';
-import { AccountType, ConfirmModalConfig, ToastMessage } from '../types';
+import { AccountWithBalance, formatPartyDisplayName, formatTWD } from '../calculations';
+import { Account, AccountType, Category, ConfirmModalConfig, ToastMessage } from '../types';
 import { getTodayDateString } from '../storage';
+
+const RECENT_ACCOUNTS_KEY = 'simple_ledger_recent_accounts';
+
+export function getRecentAccountIds(): string[] {
+  try {
+    const raw = localStorage.getItem(RECENT_ACCOUNTS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function recordRecentAccountId(accountId: string): void {
+  if (!accountId) return;
+  try {
+    const current = getRecentAccountIds().filter((id) => id !== accountId);
+    const next = [accountId, ...current].slice(0, 3);
+    localStorage.setItem(RECENT_ACCOUNTS_KEY, JSON.stringify(next));
+  } catch {
+    // ignore storage errors
+  }
+}
 
 export const BrandLogo: React.FC = () => (
   <div className="flex items-center select-none" aria-label="Logo">
@@ -121,12 +148,495 @@ export const AccountTypeIcon: React.FC<{ type: AccountType; className?: string }
 };
 
 export const ACCOUNT_TYPE_LABELS: Record<AccountType, string> = {
-  bank: '銀行',
-  cash: '現金',
-  business_cashbox: '機台錢箱',
+  bank: '銀行帳戶',
+  cash: '現金錢包',
   credit_card: '信用卡',
-  investment: '投資',
-  crypto: '加密幣',
+  investment: '投資證券',
+  crypto: '虛擬貨幣',
+  business_cashbox: '機台錢箱',
+};
+
+/**
+ * 現代化底部帳戶選擇器（AccountPicker Bottom Sheet）
+ * - 依帳戶類型分組（銀行、現金、信用卡、投資等）
+ * - 每個選項以視覺卡片呈現：圖示 + 帳戶名稱 + 當前即時餘額
+ * - 將最近使用過的帳戶置頂快選
+ */
+export const AccountPickerButton: React.FC<{
+  accounts: (Account | AccountWithBalance)[];
+  value: string;
+  onChange: (accountId: string) => void;
+  label?: string;
+  placeholder?: string;
+  allowEmpty?: boolean;
+  emptyLabel?: string;
+}> = ({
+  accounts,
+  value,
+  onChange,
+  label = '選擇帳戶',
+  placeholder = '請選擇帳戶',
+  allowEmpty = false,
+  emptyLabel = '不扣款（僅記錄投入成本）',
+}) => {
+  const [isOpen, setIsOpen] = useState(false);
+
+  const selectedAcc = accounts.find((a) => a.id === value);
+  const getBal = (acc: Account | AccountWithBalance): number =>
+    'currentBalance' in acc ? acc.currentBalance : acc.initialBalance;
+
+  const recentIds = getRecentAccountIds();
+  const recentAccounts = recentIds
+    .map((id) => accounts.find((a) => a.id === id))
+    .filter((a): a is Account | AccountWithBalance => Boolean(a));
+
+  const groupOrder: AccountType[] = [
+    'bank',
+    'cash',
+    'credit_card',
+    'investment',
+    'crypto',
+    'business_cashbox',
+  ];
+
+  const handleSelect = (id: string) => {
+    if (id) {
+      recordRecentAccountId(id);
+    }
+    onChange(id);
+    setIsOpen(false);
+  };
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setIsOpen(true)}
+        className="w-full min-h-[44px] px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-left flex items-center justify-between gap-2 hover:border-emerald-500 transition"
+      >
+        {selectedAcc ? (
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div
+              className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
+                selectedAcc.type === 'credit_card'
+                  ? 'bg-rose-50 text-rose-600 dark:bg-rose-950/60 dark:text-rose-400'
+                  : selectedAcc.isBusinessWorkingCapital ||
+                    selectedAcc.type === 'business_cashbox'
+                  ? 'bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-400'
+                  : 'bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-200'
+              }`}
+            >
+              <AccountTypeIcon type={selectedAcc.type} className="w-3.5 h-3.5" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                {selectedAcc.name}
+              </div>
+              <div
+                className={`text-[10px] font-mono ${
+                  getBal(selectedAcc) < 0
+                    ? 'text-rose-500 font-semibold'
+                    : 'text-slate-400'
+                }`}
+              >
+                {selectedAcc.type === 'credit_card' && getBal(selectedAcc) < 0
+                  ? `未繳卡費 ${formatTWD(Math.abs(getBal(selectedAcc)))}`
+                  : `餘額 ${formatTWD(getBal(selectedAcc))}`}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+            {allowEmpty && value === '' ? emptyLabel : placeholder}
+          </span>
+        )}
+        <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />
+      </button>
+
+      {isOpen && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-xs">
+          <div className="w-full max-w-md rounded-t-3xl bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 shadow-2xl max-h-[82vh] flex flex-col">
+            <div className="pt-2.5 pb-2.5 px-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white">{label}</h3>
+              <button
+                type="button"
+                onClick={() => setIsOpen(false)}
+                className="min-w-[44px] min-h-[44px] -mr-2 flex items-center justify-center rounded-xl text-slate-400"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-4 overflow-y-auto space-y-4 pb-[calc(1.5rem+env(safe-area-inset-bottom))]">
+              {allowEmpty && (
+                <button
+                  type="button"
+                  onClick={() => handleSelect('')}
+                  className={`w-full min-h-[48px] p-3 rounded-2xl border text-left flex items-center justify-between transition ${
+                    value === ''
+                      ? 'border-emerald-600 bg-emerald-50/70 dark:bg-emerald-950/40 dark:border-emerald-500'
+                      : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50'
+                  }`}
+                >
+                  <span className="text-xs font-bold text-slate-700 dark:text-slate-200">
+                    {emptyLabel}
+                  </span>
+                  {value === '' && <Check className="w-4 h-4 text-emerald-600" />}
+                </button>
+              )}
+
+              {/* 最近使用過的帳戶置頂快選 */}
+              {recentAccounts.length > 0 && (
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-1 text-[11px] font-bold text-slate-400">
+                    <Clock className="w-3 h-3" />
+                    <span>最近常用</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {recentAccounts.map((acc) => {
+                      const isSel = acc.id === value;
+                      return (
+                        <button
+                          key={`recent_${acc.id}`}
+                          type="button"
+                          onClick={() => handleSelect(acc.id)}
+                          className={`min-h-[40px] px-3 rounded-xl border text-xs font-bold flex items-center gap-1.5 transition ${
+                            isSel
+                              ? 'bg-slate-900 text-white border-slate-900 dark:bg-emerald-600 dark:border-emerald-600'
+                              : 'bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700'
+                          }`}
+                        >
+                          <AccountTypeIcon type={acc.type} className="w-3.5 h-3.5" />
+                          <span>{acc.name}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* 依帳戶類型分組卡片 */}
+              {groupOrder.map((gType) => {
+                const groupAccs = accounts.filter((a) => a.type === gType);
+                if (groupAccs.length === 0) return null;
+
+                return (
+                  <div key={gType} className="space-y-2">
+                    <div className="text-[11px] font-bold text-slate-400 px-0.5">
+                      {ACCOUNT_TYPE_LABELS[gType]}
+                    </div>
+                    <div className="space-y-2">
+                      {groupAccs.map((acc) => {
+                        const isSelected = acc.id === value;
+                        const bal = getBal(acc);
+                        const isCardDebt = acc.type === 'credit_card' && bal < 0;
+
+                        return (
+                          <button
+                            key={acc.id}
+                            type="button"
+                            onClick={() => handleSelect(acc.id)}
+                            className={`w-full min-h-[54px] p-3 rounded-2xl border text-left flex items-center justify-between gap-3 transition ${
+                              isSelected
+                                ? 'border-emerald-600 bg-emerald-50/70 dark:bg-emerald-950/50 dark:border-emerald-500 shadow-2xs'
+                                : 'border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-800/60 hover:border-slate-300'
+                            }`}
+                          >
+                            <div className="flex items-center gap-3 min-w-0">
+                              <div
+                                className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                                  acc.type === 'credit_card'
+                                    ? 'bg-rose-50 text-rose-600 dark:bg-rose-950/60 dark:text-rose-400'
+                                    : acc.isBusinessWorkingCapital ||
+                                      acc.type === 'business_cashbox'
+                                    ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-400'
+                                    : 'bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-200'
+                                }`}
+                              >
+                                <AccountTypeIcon type={acc.type} className="w-4 h-4" />
+                              </div>
+                              <div className="min-w-0">
+                                <div className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                                  {acc.name}
+                                </div>
+                                <div className="text-[11px] text-slate-400">
+                                  {ACCOUNT_TYPE_LABELS[acc.type]}
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-2 shrink-0">
+                              <div className="text-right">
+                                <div
+                                  className={`text-xs font-mono font-bold tabular-nums ${
+                                    bal < 0
+                                      ? 'text-rose-600 dark:text-rose-400'
+                                      : 'text-slate-900 dark:text-white'
+                                  }`}
+                                >
+                                  {formatTWD(bal)}
+                                </div>
+                                {isCardDebt && (
+                                  <div className="text-[10px] font-semibold text-rose-500">
+                                    目前未繳負債
+                                  </div>
+                                )}
+                              </div>
+                              {isSelected && (
+                                <Check className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                              )}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+};
+
+/**
+ * 現代化底部分類選擇器（CategoryPicker Bottom Sheet）
+ */
+export const CategoryPickerButton: React.FC<{
+  categories: Category[];
+  value: string;
+  onChange: (categoryId: string) => void;
+  label?: string;
+}> = ({ categories, value, onChange, label = '選擇分類' }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const selectedCat = categories.find((c) => c.id === value) || categories[0];
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setIsOpen(true)}
+        className="w-full min-h-[44px] px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-left flex items-center justify-between gap-2 hover:border-emerald-500 transition"
+      >
+        {selectedCat ? (
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="w-7 h-7 rounded-lg bg-slate-100 dark:bg-slate-700 flex items-center justify-center text-slate-700 dark:text-slate-200 shrink-0">
+              <CategoryIcon name={selectedCat.icon} className="w-3.5 h-3.5" />
+            </div>
+            <span className="text-xs font-bold text-slate-900 dark:text-white truncate">
+              {selectedCat.name}
+            </span>
+          </div>
+        ) : (
+          <span className="text-xs text-slate-400">請選擇分類</span>
+        )}
+        <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />
+      </button>
+
+      {isOpen && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-xs">
+          <div className="w-full max-w-md rounded-t-3xl bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 shadow-2xl max-h-[75vh] flex flex-col">
+            <div className="pt-2.5 pb-2.5 px-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white">{label}</h3>
+              <button
+                type="button"
+                onClick={() => setIsOpen(false)}
+                className="min-w-[44px] min-h-[44px] -mr-2 flex items-center justify-center rounded-xl text-slate-400"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-4 overflow-y-auto grid grid-cols-3 gap-2 pb-[calc(1.5rem+env(safe-area-inset-bottom))]">
+              {categories.map((cat) => {
+                const isSelected = cat.id === value;
+                return (
+                  <button
+                    key={cat.id}
+                    type="button"
+                    onClick={() => {
+                      onChange(cat.id);
+                      setIsOpen(false);
+                    }}
+                    className={`min-h-[56px] p-2.5 rounded-2xl border text-left flex flex-col justify-between transition ${
+                      isSelected
+                        ? 'border-emerald-600 bg-emerald-50/80 dark:bg-emerald-950/50 dark:border-emerald-500 text-slate-900 dark:text-white'
+                        : 'border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/50 text-slate-700 dark:text-slate-300'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between w-full">
+                      <CategoryIcon
+                        name={cat.icon}
+                        className={`w-4 h-4 ${
+                          isSelected ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500'
+                        }`}
+                      />
+                      {isSelected && <Check className="w-3.5 h-3.5 text-emerald-600" />}
+                    </div>
+                    <span className="text-xs font-bold truncate w-full mt-1">{cat.name}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+};
+
+/**
+ * 現代化底部日期 (1-28 號) 網格選擇器（取代扣款日/結帳日/繳款截止日原生 <select>）
+ */
+export const DayOfMonthPickerButton: React.FC<{
+  value?: number;
+  onChange: (day: number | undefined) => void;
+  label?: string;
+  prefix?: string;
+  allowClear?: boolean;
+}> = ({ value, onChange, label = '選擇每月日期', prefix = '每月', allowClear = false }) => {
+  const [isOpen, setIsOpen] = useState(false);
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setIsOpen(true)}
+        className="w-full min-h-[44px] px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-left flex items-center justify-between gap-2 hover:border-emerald-500 transition"
+      >
+        <span className="text-xs font-mono font-bold text-slate-900 dark:text-white">
+          {value ? `${prefix} ${value} 號` : '未設定'}
+        </span>
+        <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+      </button>
+
+      {isOpen && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-xs">
+          <div className="w-full max-w-md rounded-t-3xl bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 shadow-2xl p-4 pb-[calc(1.5rem+env(safe-area-inset-bottom))]">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white">{label}</h3>
+              <button
+                type="button"
+                onClick={() => setIsOpen(false)}
+                className="min-w-[44px] min-h-[44px] -mr-2 flex items-center justify-center rounded-xl text-slate-400"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-7 gap-1.5">
+              {Array.from({ length: 28 }, (_, i) => i + 1).map((day) => {
+                const isSelected = value === day;
+                return (
+                  <button
+                    key={day}
+                    type="button"
+                    onClick={() => {
+                      onChange(day);
+                      setIsOpen(false);
+                    }}
+                    className={`min-h-[44px] rounded-xl text-xs font-mono font-bold flex items-center justify-center border transition ${
+                      isSelected
+                        ? 'bg-slate-900 text-white border-slate-900 dark:bg-emerald-600 dark:border-emerald-600'
+                        : 'bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200/70 dark:border-slate-700'
+                    }`}
+                  >
+                    {day}
+                  </button>
+                );
+              })}
+            </div>
+
+            {allowClear && (
+              <button
+                type="button"
+                onClick={() => {
+                  onChange(undefined);
+                  setIsOpen(false);
+                }}
+                className="mt-3 w-full min-h-[44px] rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-500"
+              >
+                清除日期設定
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+    </>
+  );
+};
+
+/**
+ * 現代化底部聯絡人選擇器（取代還款人/收款人原生 <select>）
+ */
+export const PersonPickerButton: React.FC<{
+  participants: string[];
+  value: string;
+  onChange: (person: string) => void;
+  label?: string;
+}> = ({ participants, value, onChange, label = '選擇對象' }) => {
+  const [isOpen, setIsOpen] = useState(false);
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setIsOpen(true)}
+        className="w-full min-h-[44px] px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-left flex items-center justify-between gap-2 hover:border-emerald-500 transition"
+      >
+        <div className="flex items-center gap-2 min-w-0">
+          <User className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+          <span className="text-xs font-bold text-slate-900 dark:text-white truncate">
+            {formatPartyDisplayName(value)}
+          </span>
+        </div>
+        <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />
+      </button>
+
+      {isOpen && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-xs">
+          <div className="w-full max-w-md rounded-t-3xl bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 shadow-2xl p-4 pb-[calc(1.5rem+env(safe-area-inset-bottom))]">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white">{label}</h3>
+              <button
+                type="button"
+                onClick={() => setIsOpen(false)}
+                className="min-w-[44px] min-h-[44px] -mr-2 flex items-center justify-center rounded-xl text-slate-400"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2">
+              {participants.map((p) => {
+                const isSelected = p === value;
+                return (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => {
+                      onChange(p);
+                      setIsOpen(false);
+                    }}
+                    className={`min-h-[48px] px-3 rounded-2xl border text-xs font-bold flex items-center justify-between transition ${
+                      isSelected
+                        ? 'border-emerald-600 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-900 dark:text-emerald-300'
+                        : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200'
+                    }`}
+                  >
+                    <span className="truncate">{formatPartyDisplayName(p)}</span>
+                    {isSelected && <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
 };
 
 /**
@@ -141,18 +651,18 @@ export const YearStepper: React.FC<{
       <button
         type="button"
         onClick={() => onChange(year - 1)}
-        className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700 transition"
+        className="min-w-[36px] min-h-[36px] rounded-lg flex items-center justify-center text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700 transition"
         aria-label="上一年"
       >
         <ChevronLeft className="w-3.5 h-3.5" />
       </button>
-      <span className="px-2 h-7 flex items-center justify-center text-xs font-mono font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">
+      <span className="px-2 min-h-[36px] flex items-center justify-center text-xs font-mono font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">
         {year}年
       </span>
       <button
         type="button"
         onClick={() => onChange(year + 1)}
-        className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700 transition"
+        className="min-w-[36px] min-h-[36px] rounded-lg flex items-center justify-center text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700 transition"
         aria-label="下一年"
       >
         <ChevronRight className="w-3.5 h-3.5" />
@@ -193,7 +703,7 @@ export const MonthStepper: React.FC<{
         <button
           type="button"
           onClick={() => shiftMonth(-1)}
-          className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700 transition"
+          className="min-w-[36px] min-h-[36px] rounded-lg flex items-center justify-center text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700 transition"
           aria-label="上個月"
         >
           <ChevronLeft className="w-3.5 h-3.5" />
@@ -204,14 +714,14 @@ export const MonthStepper: React.FC<{
             setPickerYear(year);
             setOpenPicker(true);
           }}
-          className="px-2 h-7 text-xs font-mono font-bold text-slate-800 dark:text-slate-100 hover:bg-white dark:hover:bg-slate-700 rounded-lg transition whitespace-nowrap"
+          className="px-2 min-h-[36px] text-xs font-mono font-bold text-slate-800 dark:text-slate-100 hover:bg-white dark:hover:bg-slate-700 rounded-lg transition whitespace-nowrap"
         >
           {year}年{month}月
         </button>
         <button
           type="button"
           onClick={() => shiftMonth(1)}
-          className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700 transition"
+          className="min-w-[36px] min-h-[36px] rounded-lg flex items-center justify-center text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700 transition"
           aria-label="下個月"
         >
           <ChevronRight className="w-3.5 h-3.5" />
@@ -225,7 +735,7 @@ export const MonthStepper: React.FC<{
               <button
                 type="button"
                 onClick={() => setPickerYear((y) => y - 1)}
-                className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-700 dark:text-slate-200"
+                className="min-w-[44px] min-h-[44px] rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-700 dark:text-slate-200"
               >
                 <ChevronLeft className="w-4 h-4" />
               </button>
@@ -235,7 +745,7 @@ export const MonthStepper: React.FC<{
               <button
                 type="button"
                 onClick={() => setPickerYear((y) => y + 1)}
-                className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-700 dark:text-slate-200"
+                className="min-w-[44px] min-h-[44px] rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-700 dark:text-slate-200"
               >
                 <ChevronRight className="w-4 h-4" />
               </button>
@@ -253,7 +763,7 @@ export const MonthStepper: React.FC<{
                       onChange(mk);
                       setOpenPicker(false);
                     }}
-                    className={`py-2 rounded-xl text-xs font-bold transition ${
+                    className={`min-h-[44px] rounded-xl text-xs font-bold transition ${
                       isSelected
                         ? 'bg-slate-900 text-white dark:bg-emerald-600'
                         : 'bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100'
@@ -268,7 +778,7 @@ export const MonthStepper: React.FC<{
             <button
               type="button"
               onClick={() => setOpenPicker(false)}
-              className="mt-3 w-full py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-semibold text-slate-600 dark:text-slate-300"
+              className="mt-3 w-full min-h-[44px] rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-semibold text-slate-600 dark:text-slate-300"
             >
               關閉
             </button>
@@ -334,7 +844,7 @@ export const DatePickerButton: React.FC<{
         <button
           type="button"
           onClick={openCalendar}
-          className="flex-1 h-9 px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-mono font-bold text-slate-900 dark:text-white flex items-center justify-between hover:border-emerald-500 transition"
+          className="flex-1 min-h-[44px] px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-mono font-bold text-slate-900 dark:text-white flex items-center justify-between hover:border-emerald-500 transition"
         >
           <span>{friendlyLabel}</span>
           <Calendar className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
@@ -342,7 +852,7 @@ export const DatePickerButton: React.FC<{
         <button
           type="button"
           onClick={() => onChange(todayStr)}
-          className={`h-9 px-2.5 rounded-xl text-xs font-semibold border transition ${
+          className={`min-h-[44px] px-3 rounded-xl text-xs font-semibold border transition ${
             value === todayStr
               ? 'bg-slate-900 text-white border-slate-900 dark:bg-emerald-600 dark:border-emerald-600'
               : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'
@@ -353,7 +863,7 @@ export const DatePickerButton: React.FC<{
         <button
           type="button"
           onClick={() => onChange(yesterdayStr)}
-          className={`h-9 px-2.5 rounded-xl text-xs font-semibold border transition ${
+          className={`min-h-[44px] px-3 rounded-xl text-xs font-semibold border transition ${
             value === yesterdayStr
               ? 'bg-slate-900 text-white border-slate-900 dark:bg-emerald-600 dark:border-emerald-600'
               : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'
@@ -379,7 +889,7 @@ export const DatePickerButton: React.FC<{
                     onChange(q.val);
                     setIsOpen(false);
                   }}
-                  className={`py-1.5 rounded-lg text-xs font-bold border transition ${
+                  className={`min-h-[40px] rounded-lg text-xs font-bold border transition ${
                     value === q.val
                       ? 'bg-emerald-600 text-white border-emerald-600'
                       : 'bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700'
@@ -394,7 +904,7 @@ export const DatePickerButton: React.FC<{
               <button
                 type="button"
                 onClick={() => shiftViewMonth(-1)}
-                className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-700 dark:text-slate-200"
+                className="min-w-[40px] min-h-[40px] rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-700 dark:text-slate-200"
               >
                 <ChevronLeft className="w-4 h-4" />
               </button>
@@ -404,7 +914,7 @@ export const DatePickerButton: React.FC<{
               <button
                 type="button"
                 onClick={() => shiftViewMonth(1)}
-                className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-700 dark:text-slate-200"
+                className="min-w-[40px] min-h-[40px] rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-700 dark:text-slate-200"
               >
                 <ChevronRight className="w-4 h-4" />
               </button>
@@ -438,7 +948,7 @@ export const DatePickerButton: React.FC<{
                       onChange(fullStr);
                       setIsOpen(false);
                     }}
-                    className={`h-8 rounded-lg text-xs font-mono font-bold flex items-center justify-center transition ${
+                    className={`min-h-[38px] rounded-lg text-xs font-mono font-bold flex items-center justify-center transition ${
                       isSelected
                         ? 'bg-slate-900 text-white dark:bg-emerald-600'
                         : isToday
@@ -455,7 +965,7 @@ export const DatePickerButton: React.FC<{
             <button
               type="button"
               onClick={() => setIsOpen(false)}
-              className="mt-3 w-full py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-semibold text-slate-600 dark:text-slate-300"
+              className="mt-3 w-full min-h-[42px] rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-semibold text-slate-600 dark:text-slate-300"
             >
               取消
             </button>
@@ -543,7 +1053,7 @@ export const ConfirmModal: React.FC<{
           <button
             type="button"
             onClick={onClose}
-            className="h-9 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-semibold hover:bg-slate-50 transition"
+            className="min-h-[44px] rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-semibold hover:bg-slate-50 transition"
           >
             {config.cancelLabel || '取消'}
           </button>
@@ -553,7 +1063,7 @@ export const ConfirmModal: React.FC<{
               config.onConfirm();
               onClose();
             }}
-            className={`h-9 rounded-xl text-white text-xs font-semibold transition ${
+            className={`min-h-[44px] rounded-xl text-white text-xs font-semibold transition ${
               config.danger
                 ? 'bg-rose-600 hover:bg-rose-500'
                 : 'bg-slate-900 dark:bg-emerald-600 hover:opacity-95'

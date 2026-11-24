@@ -118,13 +118,22 @@ export default function App() {
     showToast(`已新增${tpl.type === 'income' ? '收入' : '支出'}快捷「${tpl.title}」`);
   };
 
-  const handleDeleteTemplate = (id: string) => {
-    setTemplates((prev) => {
-      const next = prev.filter((t) => t.id !== id);
-      localStorage.setItem(TEMPLATES_STORAGE_KEY, JSON.stringify(next));
-      return next;
+  const handleDeleteTemplate = (tpl: QuickTemplate) => {
+    setConfirmConfig({
+      isOpen: true,
+      title: '刪除此快捷範本？',
+      description: `確定要移除${tpl.type === 'income' ? '收入' : '支出'}快捷範本「${tpl.title} (NT$${tpl.amount})」嗎？移除後不會影響已記帳的歷史紀錄。`,
+      confirmLabel: '確定刪除',
+      danger: true,
+      onConfirm: () => {
+        setTemplates((prev) => {
+          const next = prev.filter((t) => t.id !== tpl.id);
+          localStorage.setItem(TEMPLATES_STORAGE_KEY, JSON.stringify(next));
+          return next;
+        });
+        showToast('已移除快捷範本', 'info');
+      },
     });
-    showToast('已移除快捷範本', 'info');
   };
 
   const showToast = (text: string, type: ToastMessage['type'] = 'success') => {
@@ -392,20 +401,87 @@ export default function App() {
       ...prev,
       transactions: [newTx, ...prev.transactions],
     }));
-    showToast(`已入帳「${rule.title}」`);
+    const actionMsg =
+      rule.kind === 'fixed_income'
+        ? `已入帳「${rule.title}」`
+        : rule.kind === 'long_term_invest'
+        ? `已投入「${rule.title}」`
+        : `已付款「${rule.title}」`;
+    showToast(actionMsg);
   };
 
-  const handleSkipRecurring = (rule: RecurringRuleWithMetrics) => {
+  const handleRequestSkipRecurring = (rule: RecurringRuleWithMetrics) => {
     if (rule.skippedPeriods.includes(monthKey)) return;
+    setConfirmConfig({
+      isOpen: true,
+      title: '跳過本月項目？',
+      description: `確定要跳過本期的「${rule.title} (${formatTWD(rule.amount)})」嗎？執行後本月不會扣款，也不會計入累計金額。`,
+      confirmLabel: '確定跳過',
+      danger: false,
+      onConfirm: () => {
+        updateData((prev) => ({
+          ...prev,
+          recurringRules: prev.recurringRules.map((r) =>
+            r.id === rule.id
+              ? { ...r, skippedPeriods: [...r.skippedPeriods, monthKey] }
+              : r
+          ),
+        }));
+        showToast(`已跳過本期「${rule.title}」`, 'info');
+      },
+    });
+  };
+
+  // Credit Card Bill Payment Handler (銀行 -> 信用卡 transfer)
+  const handlePayCreditCardBill = (
+    cardAccount: AccountWithBalance,
+    fromAccountId: string,
+    amount: number,
+    date: string
+  ) => {
+    const bankAcc = data.accounts.find((a) => a.id === fromAccountId);
+    const payTx: Transaction = {
+      id: `tx_cc_pay_${Date.now()}`,
+      type: 'transfer',
+      amount,
+      date,
+      accountId: fromAccountId,
+      toAccountId: cardAccount.id,
+      note: `繳交信用卡費（${cardAccount.name}）`,
+    };
     updateData((prev) => ({
       ...prev,
-      recurringRules: prev.recurringRules.map((r) =>
-        r.id === rule.id
-          ? { ...r, skippedPeriods: [...r.skippedPeriods, monthKey] }
-          : r
-      ),
+      transactions: [payTx, ...prev.transactions],
     }));
-    showToast(`已跳過「${rule.title}」`, 'info');
+    showToast(
+      `已從「${bankAcc?.name || '銀行帳戶'}」繳交「${cardAccount.name}」卡費 ${formatTWD(amount)}`
+    );
+  };
+
+  // One-Off Investment Handlers (單筆買進)
+  const handleSaveOneOffInvestment = (tx: Transaction) => {
+    updateData((prev) => ({
+      ...prev,
+      transactions: [tx, ...prev.transactions],
+    }));
+    showToast(`已記錄單筆投入「${tx.assetTitle || tx.note}」${formatTWD(tx.amount)}`);
+  };
+
+  const handleDeleteOneOffInvestment = (tx: Transaction) => {
+    setConfirmConfig({
+      isOpen: true,
+      title: '刪除此筆單筆投入紀錄？',
+      description: `確定要刪除「${tx.assetTitle || tx.note} (${formatTWD(tx.amount)})」嗎？刪除後將同步從總投入本金移除，若有綁定扣款帳戶也會還原餘額。`,
+      confirmLabel: '確定刪除',
+      danger: true,
+      onConfirm: () => {
+        updateData((prev) => ({
+          ...prev,
+          transactions: prev.transactions.filter((t) => t.id !== tx.id),
+        }));
+        showToast('已刪除單筆投入紀錄', 'info');
+      },
+    });
   };
 
   const handleTogglePauseRule = (rule: RecurringRuleWithMetrics) => {
@@ -720,7 +796,8 @@ export default function App() {
               transactions={data.transactions}
               pendingRules={pendingRules}
               onExecuteRecurring={handleExecuteRecurring}
-              onSkipRecurring={handleSkipRecurring}
+              onRequestSkipRecurring={handleRequestSkipRecurring}
+              onPayCreditCardBill={handlePayCreditCardBill}
               onSaveAccount={handleSaveAccount}
               onArchiveAccount={handleArchiveAccount}
               onDeleteAccount={handleDeleteAccount}
@@ -757,7 +834,7 @@ export default function App() {
           {activeTab === 'debts' && (
             <DebtsTab
               debtOverview={multiPartyDebtOverview}
-              accounts={data.accounts}
+              accounts={accountsWithBalance}
               enableBusinessModule={enableBusinessModule}
               onOpenQuickAdd={handleOpenQuickAdd}
               onConfirmPairRepayment={handleConfirmPairRepayment}
@@ -770,13 +847,16 @@ export default function App() {
               monthKey={monthKey}
               enableBusinessModule={enableBusinessModule}
               rulesWithMetrics={recurringWithMetrics}
-              accounts={data.accounts}
+              accounts={accountsWithBalance}
               categories={data.categories}
+              transactions={data.transactions}
               onExecuteRule={handleExecuteRecurring}
-              onSkipRule={handleSkipRecurring}
+              onRequestSkipRule={handleRequestSkipRecurring}
               onTogglePauseRule={handleTogglePauseRule}
               onSaveRule={handleSaveRule}
               onDeleteRule={handleDeleteRule}
+              onSaveOneOffInvestment={handleSaveOneOffInvestment}
+              onDeleteOneOffInvestment={handleDeleteOneOffInvestment}
             />
           )}
 
@@ -843,7 +923,7 @@ export default function App() {
         <QuickAddDrawer
           isOpen={isQuickAddOpen}
           onClose={() => setIsQuickAddOpen(false)}
-          accounts={data.accounts}
+          accounts={accountsWithBalance}
           categories={data.categories}
           existingPeople={existingPeople}
           templates={templates}

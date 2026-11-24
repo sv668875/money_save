@@ -17,9 +17,14 @@ import {
   Transaction,
   TransactionType,
 } from '../types';
-import { formatPartyDisplayName } from '../calculations';
+import { AccountWithBalance, formatPartyDisplayName } from '../calculations';
 import { getTodayDateString } from '../storage';
-import { CategoryIcon, DatePickerButton } from './SharedUI';
+import {
+  AccountPickerButton,
+  CategoryIcon,
+  DatePickerButton,
+  PersonPickerButton,
+} from './SharedUI';
 
 export interface QuickAddInitialPreset {
   type?: TransactionType;
@@ -38,7 +43,7 @@ export interface QuickAddInitialPreset {
 interface QuickAddDrawerProps {
   isOpen: boolean;
   onClose: () => void;
-  accounts: Account[];
+  accounts: (Account | AccountWithBalance)[];
   categories: Category[];
   existingPeople: string[];
   templates: QuickTemplate[];
@@ -800,17 +805,12 @@ export const QuickAddDrawer: React.FC<QuickAddDrawerProps> = ({
                     <label className="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">
                       我的付款帳戶
                     </label>
-                    <select
+                    <AccountPickerButton
+                      accounts={activeAccounts}
                       value={accountId}
-                      onChange={(e) => setAccountId(e.target.value)}
-                      className="w-full min-h-[42px] px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-semibold text-slate-900 dark:text-white"
-                    >
-                      {activeAccounts.map((acc) => (
-                        <option key={acc.id} value={acc.id}>
-                          {acc.name}
-                        </option>
-                      ))}
-                    </select>
+                      onChange={setAccountId}
+                      label="選擇我的付款帳戶"
+                    />
                   </div>
                 ) : (
                   <div className="text-[11px] text-amber-700 dark:text-amber-300 bg-amber-50/80 dark:bg-amber-950/40 px-3 py-2 rounded-xl border border-amber-200/70 dark:border-amber-800/50">
@@ -1165,33 +1165,23 @@ export const QuickAddDrawer: React.FC<QuickAddDrawerProps> = ({
                       <label className="block text-[11px] font-semibold text-slate-500 mb-1">
                         還款人（誰出錢）
                       </label>
-                      <select
+                      <PersonPickerButton
+                        participants={allParticipants}
                         value={payerName}
-                        onChange={(e) => setPayerName(e.target.value)}
-                        className="w-full min-h-[42px] px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-bold text-slate-900 dark:text-white"
-                      >
-                        {allParticipants.map((p) => (
-                          <option key={p} value={p}>
-                            {formatPartyDisplayName(p)}
-                          </option>
-                        ))}
-                      </select>
+                        onChange={setPayerName}
+                        label="選擇還款人（誰出錢）"
+                      />
                     </div>
                     <div>
                       <label className="block text-[11px] font-semibold text-slate-500 mb-1">
                         收款人（還給誰）
                       </label>
-                      <select
+                      <PersonPickerButton
+                        participants={allParticipants}
                         value={repayReceiverName}
-                        onChange={(e) => setRepayReceiverName(e.target.value)}
-                        className="w-full min-h-[42px] px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-bold text-slate-900 dark:text-white"
-                      >
-                        {allParticipants.map((p) => (
-                          <option key={p} value={p}>
-                            {formatPartyDisplayName(p)}
-                          </option>
-                        ))}
-                      </select>
+                        onChange={setRepayReceiverName}
+                        label="選擇收款人（還給誰）"
+                      />
                     </div>
                   </div>
                   {payerName === repayReceiverName && (
@@ -1217,17 +1207,18 @@ export const QuickAddDrawer: React.FC<QuickAddDrawerProps> = ({
                           : '我的付款帳戶'
                         : '帳戶'}
                     </label>
-                    <select
+                    <AccountPickerButton
+                      accounts={activeAccounts}
                       value={accountId}
-                      onChange={(e) => setAccountId(e.target.value)}
-                      className="w-full min-h-[42px] px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-semibold text-slate-900 dark:text-white"
-                    >
-                      {activeAccounts.map((acc) => (
-                        <option key={acc.id} value={acc.id}>
-                          {acc.name}
-                        </option>
-                      ))}
-                    </select>
+                      onChange={setAccountId}
+                      label={
+                        type === 'transfer'
+                          ? '選擇轉出帳戶'
+                          : type === 'income'
+                          ? '選擇存入帳戶'
+                          : '選擇帳戶'
+                      }
+                    />
                   </div>
 
                   {type === 'transfer' && (
@@ -1235,17 +1226,12 @@ export const QuickAddDrawer: React.FC<QuickAddDrawerProps> = ({
                       <label className="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">
                         轉入帳戶
                       </label>
-                      <select
+                      <AccountPickerButton
+                        accounts={activeAccounts}
                         value={toAccountId}
-                        onChange={(e) => setToAccountId(e.target.value)}
-                        className="w-full min-h-[42px] px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-semibold text-slate-900 dark:text-white"
-                      >
-                        {activeAccounts.map((acc) => (
-                          <option key={acc.id} value={acc.id}>
-                            {acc.name}
-                          </option>
-                        ))}
-                      </select>
+                        onChange={setToAccountId}
+                        label="選擇轉入帳戶"
+                      />
                     </div>
                   )}
                 </div>

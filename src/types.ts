@@ -1,5 +1,6 @@
 export type AccountType = 'bank' | 'cash' | 'business_cashbox' | 'investment' | 'crypto' | 'credit_card';
 export type TransactionType = 'expense' | 'income' | 'transfer' | 'debt' | 'repay' | 'adjustment';
+export type InvestmentAssetKind = 'stock_etf' | 'fund' | 'crypto' | 'mortgage' | 'other';
 
 export interface Account {
   id: string;
@@ -8,6 +9,9 @@ export interface Account {
   initialBalance: number;
   isBusinessWorkingCapital: boolean; // true 代表營運周轉金（如娃娃機錢箱）
   archived: boolean;                 // 封存保護，已有交易禁止硬刪除
+  // 信用卡帳單與繳款設定（選填，1-28 號）
+  billingDay?: number;               // 結帳日（例：每月 15 號）
+  paymentDueDay?: number;            // 繳款截止日（例：每月 1 號）
 }
 
 export interface Category {
@@ -24,7 +28,7 @@ export interface Transaction {
   type: TransactionType;
   amount: number;                    // 正數金額（NT$）
   date: string;                      // YYYY-MM-DD
-  accountId: string;                 // 主帳戶（支出/借出/轉出/校正；若為第三方 A<->B 代墊可為空字串 ''）
+  accountId: string;                 // 主帳戶（支出/借出/轉出/校正；若為第三方 A<->B 代墊或純記錄投入可為空字串 ''）
   toAccountId?: string;              // 轉帳目標帳戶（若為 adjustment 且 toAccountId === accountId 代表調增，否則代表調減）
   categoryId?: string;
   incomeKind?: 'fixed' | 'variable'; // 區分固定 / 不固定收入
@@ -36,6 +40,10 @@ export interface Transaction {
   personName?: string;               // 對象姓名（相容舊資料）
   debtDirection?: 'i_lent' | 'they_lent'; // 我幫人墊(應收) / 別人幫我墊(應付)
   isBadDebtWriteOff?: boolean;       // 呆帳核銷標記
+  // 單筆或定期投資與資產投入標記
+  isOneOffInvestment?: boolean;      // true 代表單筆買進（股票/基金/加密貨幣/房貸/其他資產）
+  assetKind?: InvestmentAssetKind;   // 標的類型
+  assetTitle?: string;               // 標的名稱（例：0050、台積電、比特幣）
   // 定期 / 分期防重複與追蹤
   recurringRuleId?: string;
   periodKey?: string;                // 格式 YYYY-MM，搭配 ruleId 防止重複入帳
@@ -48,6 +56,7 @@ export interface RecurringRule {
   id: string;
   title: string;
   kind: 'fixed_income' | 'fixed_expense' | 'long_term_invest';
+  assetKind?: InvestmentAssetKind;   // 定期投入標的類型（股票/ETF、基金、虛擬貨幣、房貸、其他）
   amount: number;
   dayOfMonth: number;                // 每月扣款/轉帳日 (1-28)
   accountId: string;

@@ -1,8 +1,18 @@
-import { Account, Category, RecurringRule, Transaction } from './types';
+import {
+  Account,
+  Category,
+  InvestmentAssetKind,
+  RecurringRule,
+  Transaction,
+} from './types';
 
 export interface AccountWithBalance extends Account {
   currentBalance: number;
   transactionCount: number;
+  // 信用卡專屬動態欄位
+  unpaidCardDebt: number;       // 目前未繳卡費（正數表示負債額，若 >=0 則為 0）
+  daysUntilDue?: number;        // 距離下一個繳款截止日的天數 (0 ~ 31)
+  isDueSoon: boolean;           // 未繳卡費 > 0 且距離截止日 <= 5 天
 }
 
 /**
@@ -106,15 +116,31 @@ export interface InstallmentGroupSummary {
   transactions: Transaction[];
 }
 
+/**
+ * 總資產與配置比例項目
+ */
+export interface AssetAllocationItem {
+  id: 'cash' | 'investment' | 'crypto' | 'business' | 'receivable';
+  label: string;
+  amount: number;
+  percentage: number;
+  color: string;
+}
+
 export interface MonthlyOverviewMetrics {
   monthKey: string;
-  totalNetWorth: number;           // 總資產淨值（含個人、周轉金、投資、加密、扣除卡債、加上我的應收減應付）
-  personalLiquidAssets: number;    // 個人可用現金與銀行（不含副業周轉金）
+  totalAssets: number;             // 總資產（所有正資產加總 + 應收代墊）
+  totalLiabilities: number;        // 總負債（信用卡未繳卡費 + 應付欠款 + 透支帳戶）
+  totalNetWorth: number;           // 淨資產（totalAssets - totalLiabilities）
+  personalLiquidAssets: number;    // 現金類（個人銀行＋錢包）
   businessWorkingCapital: number;  // 副業營運周轉金
-  investmentAndCrypto: number;     // 投資與加密資產
+  investmentAssetsOnly: number;    // 投資資產（股票/基金帳戶）
+  cryptoAssetsOnly: number;        // 虛擬貨幣帳戶
+  investmentAndCrypto: number;     // 投資與加密資產合計
   creditCardDebt: number;          // 信用卡待繳帳款（正數表示負債額）
   netReceivable: number;           // 我的應收代墊總額
   netPayable: number;              // 我的應付欠款總額
+  assetAllocation: AssetAllocationItem[]; // 視覺化資產配置比例清單
   // 本月個人+總體收支
   monthlyPersonalIncome: number;
   monthlyFixedIncome: number;
@@ -144,9 +170,94 @@ export interface YearlyStatistics {
 }
 
 /**
+ * 投資與資產投入總覽（整合「定期定額累計」與「單筆買進紀錄」）
+ */
+export interface InvestmentPortfolioBreakdownItem {
+  kind: InvestmentAssetKind;
+  label: string;
+  recurringTotal: number;
+  oneOffTotal: number;
+  combinedTotal: number;
+  percentage: number;
+}
+
+export interface InvestmentPortfolioSummary {
+  totalPrincipal: number;            // 總投入本金（定期定額累計 + 單筆買進總額）
+  recurringPrincipalTotal: number;   // 定期定額累計總額
+  oneOffPrincipalTotal: number;      // 單筆買進累計總額
+  byAssetKind: InvestmentPortfolioBreakdownItem[];
+  oneOffTransactions: Transaction[]; // 單筆買進歷史明細
+}
+
+export const INVESTMENT_ASSET_KIND_LABELS: Record<InvestmentAssetKind, string> = {
+  stock_etf: '股票 / ETF',
+  fund: '基金',
+  crypto: '虛擬貨幣',
+  mortgage: '房貸 / 不動產',
+  other: '其他資產',
+};
+
+export function inferAssetKindFromTitle(
+  title: string,
+  explicitKind?: InvestmentAssetKind
+): InvestmentAssetKind {
+  if (explicitKind) return explicitKind;
+  const lower = title.toLowerCase();
+  if (lower.includes('房貸') || lower.includes('房')) return 'mortgage';
+  if (
+    lower.includes('btc') ||
+    lower.includes('eth') ||
+    lower.includes('usdt') ||
+    lower.includes('幣') ||
+    lower.includes('加密')
+  ) {
+    return 'crypto';
+  }
+  if (lower.includes('基金')) return 'fund';
+  if (
+    lower.includes('0050') ||
+    lower.includes('0056') ||
+    lower.includes('00878') ||
+    lower.includes('etf') ||
+    lower.includes('股') ||
+    lower.includes('台積')
+  ) {
+    return 'stock_etf';
+  }
+  return 'stock_etf';
+}
+
+/**
+ * 依據規則類型回傳符合台灣用語的操作按鈕文字（區分收入、支出與投資）
+ */
+export function getRecurringActionButtonLabel(
+  kind: RecurringRule['kind']
+): { actionLabel: string; doneLabel: string } {
+  if (kind === 'fixed_income') {
+    return { actionLabel: '已入帳', doneLabel: '本月已收款' };
+  }
+  if (kind === 'long_term_invest') {
+    return { actionLabel: '已投入', doneLabel: '本月已投入' };
+  }
+  return { actionLabel: '已付款', doneLabel: '本月已付款' };
+}
+
+/**
+ * 計算距離每月指定日期 (1-28) 的剩餘天數 (0 ~ 31)
+ */
+export function calculateDaysUntilDayOfMonth(targetDay: number): number {
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  let nextDue = new Date(now.getFullYear(), now.getMonth(), targetDay);
+  if (nextDue.getTime() < today.getTime()) {
+    nextDue = new Date(now.getFullYear(), now.getMonth() + 1, targetDay);
+  }
+  const diffMs = nextDue.getTime() - today.getTime();
+  return Math.round(diffMs / (1000 * 60 * 60 * 24));
+}
+
+/**
  * 將任意代墊或還款交易正規化為 { payer, debtor }
- * - 對於 type === 'debt': payer 為實際出錢代墊者，debtor 為欠錢應分攤者
- * - 對於 type === 'repay': payer 為實際掏錢還款者(原債務人)，debtor 為收到還款者(原債權人)
  */
 export function resolveDebtParties(tx: Transaction): { payer: string; debtor: string } | null {
   if (tx.type !== 'debt' && tx.type !== 'repay') return null;
@@ -158,7 +269,6 @@ export function resolveDebtParties(tx: Transaction): { payer: string; debtor: st
     return { payer: rawPayer, debtor: rawDebtor };
   }
 
-  // 向下相容舊格式 personName + debtDirection
   const legacyPerson = tx.personName?.trim();
   if (!legacyPerson) return null;
 
@@ -168,12 +278,9 @@ export function resolveDebtParties(tx: Transaction): { payer: string; debtor: st
     }
     return { payer: 'SELF', debtor: legacyPerson };
   } else {
-    // tx.type === 'repay'
     if (tx.debtDirection === 'they_lent') {
-      // 我還對方錢 -> payer: 'SELF', debtor: legacyPerson
       return { payer: 'SELF', debtor: legacyPerson };
     }
-    // 對方還我錢 (或呆帳核銷) -> payer: legacyPerson, debtor: 'SELF'
     return { payer: legacyPerson, debtor: 'SELF' };
   }
 }
@@ -183,10 +290,7 @@ export function formatPartyDisplayName(name: string): string {
 }
 
 /**
- * 計算單一帳戶的動態餘額與交易筆數
- * 嚴格遵守帳務隔離原則：
- * - 只有當 payerName === 'SELF'（我付錢）或還款涉及 'SELF' 時，才影響我的帳戶動態餘額。
- * - 第三方代墊（A 幫 B 墊錢，雙方皆非 'SELF'）完全不影響我的個人帳戶餘額。
+ * 計算單一帳戶的動態餘額、交易筆數與信用卡到期提醒
  */
 export function calculateAccountBalances(
   accounts: Account[],
@@ -215,36 +319,39 @@ export function calculateAccountBalances(
 
     switch (tx.type) {
       case 'expense':
-        incCount(tx.accountId);
-        addBal(tx.accountId, -tx.amount);
+        if (tx.accountId) {
+          incCount(tx.accountId);
+          addBal(tx.accountId, -tx.amount);
+        }
         break;
       case 'income':
-        incCount(tx.accountId);
-        addBal(tx.accountId, tx.amount);
+        if (tx.accountId) {
+          incCount(tx.accountId);
+          addBal(tx.accountId, tx.amount);
+        }
         break;
       case 'transfer':
-        incCount(tx.accountId);
+        if (tx.accountId) {
+          incCount(tx.accountId);
+          addBal(tx.accountId, -tx.amount);
+        }
         if (tx.toAccountId && tx.toAccountId !== tx.accountId) {
           incCount(tx.toAccountId);
         }
-        addBal(tx.accountId, -tx.amount);
-        addBal(tx.toAccountId, tx.amount);
+        if (tx.toAccountId) {
+          addBal(tx.toAccountId, tx.amount);
+        }
         break;
       case 'debt': {
         const parties = resolveDebtParties(tx);
         if (!parties) break;
-        // 只有「我」先出錢幫別人代墊時，我的帳戶餘額才會扣款
         if (parties.payer === 'SELF' && parties.debtor !== 'SELF') {
           incCount(tx.accountId);
           addBal(tx.accountId, -tx.amount);
-        }
-        // 若別人幫我墊 (payer !== 'SELF', debtor === 'SELF')：我當下沒出錢，而是產生應付負債
-        // 若自己分攤 (payer === 'SELF', debtor === 'SELF')：若不小心以此型別傳入，視同支出扣款
-        else if (parties.payer === 'SELF' && parties.debtor === 'SELF') {
+        } else if (parties.payer === 'SELF' && parties.debtor === 'SELF') {
           incCount(tx.accountId);
           addBal(tx.accountId, -tx.amount);
         }
-        // 若第三方 A 幫 B 代墊 (payer !== 'SELF' && debtor !== 'SELF')：完全不影響我的帳戶
         break;
       }
       case 'repay': {
@@ -254,15 +361,12 @@ export function calculateAccountBalances(
         const parties = resolveDebtParties(tx);
         if (!parties) break;
         if (parties.debtor === 'SELF' && parties.payer !== 'SELF') {
-          // 別人還我錢 -> 我的收款帳戶餘額增加
           incCount(tx.accountId);
           addBal(tx.accountId, tx.amount);
         } else if (parties.payer === 'SELF' && parties.debtor !== 'SELF') {
-          // 我還別人錢 -> 我的付款帳戶餘額減少
           incCount(tx.accountId);
           addBal(tx.accountId, -tx.amount);
         }
-        // 若第三方 B 還錢給 A (雙方皆非 'SELF') -> 完全不影響我的帳戶
         break;
       }
       case 'adjustment':
@@ -276,11 +380,31 @@ export function calculateAccountBalances(
     }
   }
 
-  return accounts.map((acc) => ({
-    ...acc,
-    currentBalance: balanceMap.get(acc.id) ?? acc.initialBalance,
-    transactionCount: countMap.get(acc.id) ?? 0,
-  }));
+  return accounts.map((acc) => {
+    const currentBalance = balanceMap.get(acc.id) ?? acc.initialBalance;
+    const unpaidCardDebt =
+      acc.type === 'credit_card' && currentBalance < 0 ? Math.abs(currentBalance) : 0;
+    const daysUntilDue =
+      acc.type === 'credit_card' && acc.paymentDueDay
+        ? calculateDaysUntilDayOfMonth(acc.paymentDueDay)
+        : undefined;
+    // 當未繳卡費 > 0 且距離繳款截止日 <= 5 天（或已設定繳款日且在 5 天內）提醒待繳
+    const isDueSoon =
+      acc.type === 'credit_card' &&
+      !acc.archived &&
+      unpaidCardDebt > 0 &&
+      daysUntilDue !== undefined &&
+      daysUntilDue <= 5;
+
+    return {
+      ...acc,
+      currentBalance,
+      transactionCount: countMap.get(acc.id) ?? 0,
+      unpaidCardDebt,
+      daysUntilDue,
+      isDueSoon,
+    };
+  });
 }
 
 /**
@@ -300,7 +424,6 @@ export function calculateMultiPartyDebtOverview(
     if (payer !== 'SELF') contactSet.add(payer);
     if (debtor !== 'SELF') contactSet.add(debtor);
 
-    // 建立固定順序的 pairKey：若包含 'SELF' 則 'SELF' 固定為 partyA；否則依字母/字元排序
     let partyA: string;
     let partyB: string;
     if (payer === 'SELF' || debtor === 'SELF') {
@@ -338,10 +461,8 @@ export function calculateMultiPartyDebtOverview(
 
     if (tx.type === 'debt') {
       if (payer === partyA && debtor === partyB) {
-        // A 幫 B 代墊 -> B 欠 A 增加
         rel.aPaidForBTotal += tx.amount;
       } else if (payer === partyB && debtor === partyA) {
-        // B 幫 A 代墊 -> A 欠 B 增加
         rel.bPaidForATotal += tx.amount;
       }
     } else if (tx.type === 'repay') {
@@ -352,10 +473,8 @@ export function calculateMultiPartyDebtOverview(
           rel.badDebtWrittenOff -= tx.amount;
         }
       } else if (payer === partyB && debtor === partyA) {
-        // B 還錢給 A
         rel.bRepaidATotal += tx.amount;
       } else if (payer === partyA && debtor === partyB) {
-        // A 還錢給 B
         rel.aRepaidBTotal += tx.amount;
       }
     }
@@ -365,7 +484,7 @@ export function calculateMultiPartyDebtOverview(
   for (const rel of pairMap.values()) {
     const bOwesA = rel.aPaidForBTotal - rel.bRepaidATotal - rel.badDebtWrittenOff;
     const aOwesB = rel.bPaidForATotal - rel.aRepaidBTotal;
-    const net = bOwesA - aOwesB; // > 0 代表 B 欠 A；< 0 代表 A 欠 B
+    const net = bOwesA - aOwesB;
 
     rel.netBalance = net;
     rel.absNetAmount = Math.abs(net);
@@ -410,7 +529,6 @@ export function calculateMultiPartyDebtOverview(
 
   const totalUnsettledRelationsCount = allRelations.filter((r) => !r.isSettled).length;
 
-  // 計算所有參與者（含 'SELF' 與所有聯絡人）的總應收、總應付與最終淨額
   const participantMap = new Map<string, ParticipantNetSummary>();
   const ensureParticipant = (name: string) => {
     if (!participantMap.has(name)) {
@@ -467,8 +585,7 @@ export function calculateMultiPartyDebtOverview(
 }
 
 /**
- * 計算與「我 ('SELF')」相關的往來對象摘要（提供總覽淨值與向下相容使用）
- * 嚴格隔離：第三方 A <-> B 代墊絕不會混入我的個人應收應付！
+ * 計算與「我 ('SELF')」相關的往來對象摘要
  */
 export function calculatePersonDebts(transactions: Transaction[]): PersonDebtSummary[] {
   const overview = calculateMultiPartyDebtOverview(transactions);
@@ -600,6 +717,81 @@ export function calculateRecurringMetrics(
 }
 
 /**
+ * 計算「投資與資產投入總覽」（整合定期定額累計 ＋ 單筆買進紀錄，依標的類型分組）
+ */
+export function calculateInvestmentPortfolioSummary(
+  rulesWithMetrics: RecurringRuleWithMetrics[],
+  transactions: Transaction[]
+): InvestmentPortfolioSummary {
+  const longTermRules = rulesWithMetrics.filter((r) => r.kind === 'long_term_invest');
+  const oneOffTransactions = transactions
+    .filter((tx) => tx.isOneOffInvestment)
+    .sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
+
+  const kindOrder: InvestmentAssetKind[] = [
+    'stock_etf',
+    'fund',
+    'crypto',
+    'mortgage',
+    'other',
+  ];
+
+  const recurringByKind: Record<InvestmentAssetKind, number> = {
+    stock_etf: 0,
+    fund: 0,
+    crypto: 0,
+    mortgage: 0,
+    other: 0,
+  };
+
+  const oneOffByKind: Record<InvestmentAssetKind, number> = {
+    stock_etf: 0,
+    fund: 0,
+    crypto: 0,
+    mortgage: 0,
+    other: 0,
+  };
+
+  for (const rule of longTermRules) {
+    const k = inferAssetKindFromTitle(rule.title, rule.assetKind);
+    recurringByKind[k] += rule.totalCumulativeAmount;
+  }
+
+  for (const tx of oneOffTransactions) {
+    const k = inferAssetKindFromTitle(tx.assetTitle || tx.note, tx.assetKind);
+    oneOffByKind[k] += tx.amount;
+  }
+
+  const recurringPrincipalTotal = Object.values(recurringByKind).reduce((a, b) => a + b, 0);
+  const oneOffPrincipalTotal = Object.values(oneOffByKind).reduce((a, b) => a + b, 0);
+  const totalPrincipal = recurringPrincipalTotal + oneOffPrincipalTotal;
+
+  const byAssetKind: InvestmentPortfolioBreakdownItem[] = kindOrder
+    .map((kind) => {
+      const rec = recurringByKind[kind];
+      const one = oneOffByKind[kind];
+      const combined = rec + one;
+      return {
+        kind,
+        label: INVESTMENT_ASSET_KIND_LABELS[kind],
+        recurringTotal: rec,
+        oneOffTotal: one,
+        combinedTotal: combined,
+        percentage: totalPrincipal > 0 ? Math.round((combined / totalPrincipal) * 100) : 0,
+      };
+    })
+    .filter((item) => item.combinedTotal > 0);
+
+  return {
+    totalPrincipal,
+    recurringPrincipalTotal,
+    oneOffPrincipalTotal,
+    byAssetKind,
+    oneOffTransactions,
+  };
+}
+
+/**
  * 計算分期付款群組進度
  */
 export function calculateInstallmentGroups(transactions: Transaction[]): InstallmentGroupSummary[] {
@@ -642,36 +834,64 @@ export function calculateInstallmentGroups(transactions: Transaction[]): Install
 }
 
 /**
- * 計算總覽頁面的所有核心財務指標
- * 嚴格遵守帳務隔離原則：
- * - 只有本人的收入與本人的支出（含他人墊付中屬於「我 ('SELF')」分攤到的個人支出）計入月收支。
- * - 第三方代墊 (A <-> B) 完全不影響我的淨值與月收支。
+ * 計算總覽頁面的所有核心財務指標（含總資產、總負債、淨資產與資產配置比例 %）
  */
 export function calculateMonthlyOverview(
   accountsWithBalance: AccountWithBalance[],
   categories: Category[],
   transactions: Transaction[],
   personDebts: PersonDebtSummary[],
-  monthKey: string
+  monthKey: string,
+  includeBusiness = true
 ): MonthlyOverviewMetrics {
-  const activeAccounts = accountsWithBalance.filter((a) => !a.archived);
+  const activeAccounts = accountsWithBalance.filter(
+    (a) =>
+      !a.archived &&
+      (includeBusiness || (!a.isBusinessWorkingCapital && a.type !== 'business_cashbox'))
+  );
 
   let personalLiquidAssets = 0;
   let businessWorkingCapital = 0;
-  let investmentAndCrypto = 0;
+  let investmentAssetsOnly = 0;
+  let cryptoAssetsOnly = 0;
   let creditCardDebt = 0;
+  let otherOverdraftDebt = 0;
 
   for (const acc of activeAccounts) {
     if (acc.isBusinessWorkingCapital || acc.type === 'business_cashbox') {
-      businessWorkingCapital += acc.currentBalance;
+      if (acc.currentBalance >= 0) {
+        businessWorkingCapital += acc.currentBalance;
+      } else {
+        otherOverdraftDebt += Math.abs(acc.currentBalance);
+      }
     } else if (acc.type === 'bank' || acc.type === 'cash') {
-      personalLiquidAssets += acc.currentBalance;
-    } else if (acc.type === 'investment' || acc.type === 'crypto') {
-      investmentAndCrypto += acc.currentBalance;
+      if (acc.currentBalance >= 0) {
+        personalLiquidAssets += acc.currentBalance;
+      } else {
+        otherOverdraftDebt += Math.abs(acc.currentBalance);
+      }
+    } else if (acc.type === 'investment') {
+      if (acc.currentBalance >= 0) {
+        investmentAssetsOnly += acc.currentBalance;
+      } else {
+        otherOverdraftDebt += Math.abs(acc.currentBalance);
+      }
+    } else if (acc.type === 'crypto') {
+      if (acc.currentBalance >= 0) {
+        cryptoAssetsOnly += acc.currentBalance;
+      } else {
+        otherOverdraftDebt += Math.abs(acc.currentBalance);
+      }
     } else if (acc.type === 'credit_card') {
-      creditCardDebt += acc.currentBalance < 0 ? Math.abs(acc.currentBalance) : 0;
+      if (acc.currentBalance < 0) {
+        creditCardDebt += Math.abs(acc.currentBalance);
+      } else {
+        personalLiquidAssets += acc.currentBalance;
+      }
     }
   }
+
+  const investmentAndCrypto = investmentAssetsOnly + cryptoAssetsOnly;
 
   const netReceivable = personDebts
     .filter((p) => p.netBalance > 0)
@@ -681,8 +901,73 @@ export function calculateMonthlyOverview(
     .filter((p) => p.netBalance < 0)
     .reduce((sum, p) => sum + Math.abs(p.netBalance), 0);
 
-  const rawAccountsSum = activeAccounts.reduce((sum, a) => sum + a.currentBalance, 0);
-  const totalNetWorth = rawAccountsSum + netReceivable - netPayable;
+  // 總資產（所有正資產加總）與總負債（卡債＋應付代墊＋透支）
+  const totalAssets =
+    personalLiquidAssets +
+    investmentAssetsOnly +
+    cryptoAssetsOnly +
+    (includeBusiness ? businessWorkingCapital : 0) +
+    netReceivable;
+
+  const totalLiabilities = creditCardDebt + netPayable + otherOverdraftDebt;
+  const totalNetWorth = totalAssets - totalLiabilities;
+
+  // 計算資產配置比例 (%)
+  const rawAllocations: {
+    id: AssetAllocationItem['id'];
+    label: string;
+    amount: number;
+    color: string;
+  }[] = [
+    {
+      id: 'cash',
+      label: '現金類 (銀行+錢包)',
+      amount: personalLiquidAssets,
+      color: '#10b981', // emerald-500
+    },
+    {
+      id: 'investment',
+      label: '投資資產 (股票/基金)',
+      amount: investmentAssetsOnly,
+      color: '#0ea5e9', // sky-500
+    },
+    {
+      id: 'crypto',
+      label: '虛擬貨幣',
+      amount: cryptoAssetsOnly,
+      color: '#6366f1', // indigo-500
+    },
+    ...(includeBusiness
+      ? [
+          {
+            id: 'business' as const,
+            label: '營運周轉金',
+            amount: businessWorkingCapital,
+            color: '#f59e0b', // amber-500
+          },
+        ]
+      : []),
+    ...(netReceivable > 0
+      ? [
+          {
+            id: 'receivable' as const,
+            label: '應收代墊款',
+            amount: netReceivable,
+            color: '#14b8a6', // teal-500
+          },
+        ]
+      : []),
+  ];
+
+  const positiveAssetsBase = rawAllocations.reduce((s, item) => s + Math.max(0, item.amount), 0);
+
+  const assetAllocation: AssetAllocationItem[] = rawAllocations
+    .filter((item) => item.amount > 0)
+    .map((item) => ({
+      ...item,
+      percentage:
+        positiveAssetsBase > 0 ? Math.round((item.amount / positiveAssetsBase) * 100) : 0,
+    }));
 
   const catMap = new Map(categories.map((c) => [c.id, c]));
   const bizAccIds = new Set(
@@ -700,6 +985,9 @@ export function calculateMonthlyOverview(
 
   for (const tx of transactions) {
     if (!tx.date.startsWith(monthKey)) continue;
+    // 單筆投資買進屬於資產配置轉換，不應混入日常消費支出
+    if (tx.isOneOffInvestment) continue;
+
     const cat = tx.categoryId ? catMap.get(tx.categoryId) : undefined;
     const isBiz = Boolean(cat?.isBusiness || (tx.accountId && bizAccIds.has(tx.accountId)));
 
@@ -721,7 +1009,6 @@ export function calculateMonthlyOverview(
         monthlyPersonalExpense += tx.amount;
       }
     } else if (tx.type === 'debt') {
-      // 當別人幫我代墊 (debtor === 'SELF', payer !== 'SELF') 時，若該筆為我自己分攤到的消費，計入我的個人支出
       const parties = resolveDebtParties(tx);
       if (parties && parties.debtor === 'SELF' && parties.payer !== 'SELF' && tx.categoryId) {
         if (isBiz) {
@@ -735,19 +1022,24 @@ export function calculateMonthlyOverview(
 
   const monthlyNetSavings =
     monthlyPersonalIncome +
-    monthlyBusinessIncome -
+    (includeBusiness ? monthlyBusinessIncome : 0) -
     monthlyPersonalExpense -
-    monthlyBusinessExpense;
+    (includeBusiness ? monthlyBusinessExpense : 0);
 
   return {
     monthKey,
+    totalAssets,
+    totalLiabilities,
     totalNetWorth,
     personalLiquidAssets,
     businessWorkingCapital,
+    investmentAssetsOnly,
+    cryptoAssetsOnly,
     investmentAndCrypto,
     creditCardDebt,
     netReceivable,
     netPayable,
+    assetAllocation,
     monthlyPersonalIncome,
     monthlyFixedIncome,
     monthlyVariableIncome,
@@ -782,6 +1074,7 @@ export function calculateYearlyStatistics(
 
   for (const tx of transactions) {
     if (!tx.date.startsWith(yearPrefix)) continue;
+    if (tx.isOneOffInvestment) continue;
 
     const cat = tx.categoryId ? catMap.get(tx.categoryId) : undefined;
     const isBiz = Boolean(cat?.isBusiness || (tx.accountId && bizAccIds.has(tx.accountId)));
@@ -858,6 +1151,7 @@ export function calculateCategoryBreakdown(
 
   for (const tx of transactions) {
     if (!tx.date.startsWith(monthKey)) continue;
+    if (tx.isOneOffInvestment) continue;
 
     let isMyExpense = tx.type === 'expense';
     if (tx.type === 'debt') {

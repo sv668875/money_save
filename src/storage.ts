@@ -1,6 +1,6 @@
 import { Account, Category, LedgerData, RecurringRule, Transaction } from './types';
 
-const STORAGE_KEY = 'simple_ledger_v2_data';
+const STORAGE_KEY = 'simple_ledger_v3_data';
 
 export interface IStorageRepository {
   loadAll(): LedgerData;
@@ -59,6 +59,9 @@ export function createDemoData(): LedgerData {
   const m1 = getRelativeMonthKey(-1);  // 上月 e.g. 2026-10
   const m2 = getRelativeMonthKey(-2);  // 前兩月 e.g. 2026-09
 
+  // 讓國泰 CUBE 卡的繳款截止日預設落在 3 天後 (1~28 號之間)，方便在首頁立即看到「待繳卡費提醒」與「繳卡費」按鈕
+  const nearDueDay = Math.min(28, Math.max(1, ((new Date().getDate() + 2) % 28) + 1));
+
   const accounts: Account[] = [
     {
       id: 'acc_richart',
@@ -91,6 +94,8 @@ export function createDemoData(): LedgerData {
       initialBalance: -6800,
       isBusinessWorkingCapital: false,
       archived: false,
+      billingDay: 12,
+      paymentDueDay: nearDueDay,
     },
     {
       id: 'acc_sinopac',
@@ -141,6 +146,7 @@ export function createDemoData(): LedgerData {
       id: 'rule_0050',
       title: '0050 定期定額',
       kind: 'long_term_invest',
+      assetKind: 'stock_etf',
       amount: 10000,
       dayOfMonth: 15,
       accountId: 'acc_richart',
@@ -167,6 +173,7 @@ export function createDemoData(): LedgerData {
       id: 'rule_btc',
       title: 'BTC 定期定額',
       kind: 'long_term_invest',
+      assetKind: 'crypto',
       amount: 3000,
       dayOfMonth: 25,
       accountId: 'acc_richart',
@@ -300,6 +307,31 @@ export function createDemoData(): LedgerData {
       installmentGroupId: 'inst_iphone16',
       installmentIndex: 1,
       installmentTotal: 12,
+    },
+    // 單筆買進投資範例
+    {
+      id: 'tx_oneoff_1',
+      type: 'transfer',
+      amount: 45000,
+      date: `${m1}-22`,
+      accountId: 'acc_richart',
+      toAccountId: 'acc_sinopac',
+      isOneOffInvestment: true,
+      assetKind: 'stock_etf',
+      assetTitle: '台積電 (2330) 零股加碼',
+      note: '回檔單筆加碼 45 股',
+    },
+    {
+      id: 'tx_oneoff_2',
+      type: 'transfer',
+      amount: 20000,
+      date: `${m0}-10`,
+      accountId: 'acc_richart',
+      toAccountId: 'acc_sinopac',
+      isOneOffInvestment: true,
+      assetKind: 'fund',
+      assetTitle: '安聯台灣科技基金',
+      note: '單筆申購科技基金',
     },
     // 本月 (m0)
     {
@@ -453,7 +485,7 @@ export function createDemoData(): LedgerData {
       debtDirection: 'i_lent',
       note: '代墊機台搬運推車押金',
     },
-    // 2. 他人之間 (A ↔ B) 第三方代墊範例（完全獨立於我的個人帳戶與月收支）
+    // 2. 他人之間 (A ↔ B) 第三方代墊範例
     {
       id: 'tx_debt_3p_1',
       type: 'debt',
@@ -545,7 +577,7 @@ class LocalStorageRepository implements IStorageRepository {
     return JSON.stringify(
       {
         app: 'SimpleLedger',
-        version: '2.0.0',
+        version: '3.0.0',
         exportedAt: new Date().toISOString(),
         data,
       },
@@ -592,6 +624,7 @@ class LocalStorageRepository implements IStorageRepository {
       '收入性質',
       '出錢方(Payer)',
       '分攤/欠款方(Debtor)',
+      '單筆投資標的',
       '呆帳核銷',
       '分期進度',
       '備註',
@@ -624,12 +657,13 @@ class LocalStorageRepository implements IStorageRepository {
         t.date,
         typeLabels[t.type] || t.type,
         t.amount,
-        t.accountId ? accountMap.get(t.accountId) || t.accountId : '無(他人代墊)',
+        t.accountId ? accountMap.get(t.accountId) || t.accountId : '無(非本人帳戶)',
         t.toAccountId ? accountMap.get(t.toAccountId) || t.toAccountId : '',
         t.categoryId ? categoryMap.get(t.categoryId) || t.categoryId : '',
         incText,
         payerText,
         debtorText,
+        t.isOneOffInvestment ? t.assetTitle || '單筆投入' : '',
         t.isBadDebtWriteOff ? '是' : '',
         instText,
         t.note,
@@ -638,7 +672,6 @@ class LocalStorageRepository implements IStorageRepository {
         .join(',');
     });
 
-    // 加上 \uFEFF UTF-8 BOM 確保台灣 Excel 直接雙擊打開繁體中文不亂碼
     return '\uFEFF' + [headers.join(','), ...rows].join('\r\n');
   }
 }

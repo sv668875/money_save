@@ -9,6 +9,7 @@ import {
   X,
 } from 'lucide-react';
 import {
+  AccountWithBalance,
   formatPartyDisplayName,
   formatTWD,
   MultiPartyDebtOverview,
@@ -16,13 +17,13 @@ import {
   resolveDebtParties,
 } from '../calculations';
 import { QuickAddInitialPreset } from './QuickAddDrawer';
-import { DatePickerButton } from './SharedUI';
+import { AccountPickerButton, DatePickerButton } from './SharedUI';
 import { getTodayDateString } from '../storage';
 import { Account } from '../types';
 
 interface DebtsTabProps {
   debtOverview: MultiPartyDebtOverview;
-  accounts: Account[];
+  accounts: (Account | AccountWithBalance)[];
   enableBusinessModule: boolean;
   onOpenQuickAdd: (preset: QuickAddInitialPreset) => void;
   onConfirmPairRepayment: (
@@ -596,18 +597,16 @@ export const DebtsTab: React.FC<DebtsTabProps> = ({
                       ? '我的收款帳戶（錢進哪個帳戶）'
                       : '我的付款帳戶（從哪個帳戶付）'}
                   </label>
-                  <select
+                  <AccountPickerButton
+                    accounts={activeAccounts}
                     value={selectedAccountId}
-                    onChange={(e) => setSelectedAccountId(e.target.value)}
-                    required
-                    className="w-full min-h-[42px] px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  >
-                    {activeAccounts.map((acc) => (
-                      <option key={acc.id} value={acc.id}>
-                        {acc.name}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={setSelectedAccountId}
+                    label={
+                      repayingRel.creditor === 'SELF'
+                        ? '選擇我的收款帳戶'
+                        : '選擇我的付款帳戶'
+                    }
+                  />
                 </div>
               ) : (
                 <div className="p-2.5 rounded-xl bg-sky-50/80 dark:bg-sky-950/30 border border-sky-200/70 dark:border-sky-800/50 text-[11px] text-sky-800 dark:text-sky-200">

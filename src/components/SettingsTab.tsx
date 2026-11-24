@@ -17,7 +17,11 @@ import {
 } from 'lucide-react';
 import { Category, QuickTemplate } from '../types';
 import { PWAInstallButton } from './PWAComponents';
-import { CategoryIcon } from './SharedUI';
+import {
+  CategoryIcon,
+  CategoryPickerButton,
+  DayOfMonthPickerButton,
+} from './SharedUI';
 
 interface SettingsTabProps {
   categories: Category[];
@@ -25,7 +29,7 @@ interface SettingsTabProps {
   onChangeMonthStartDay: (day: number) => void;
   templates: QuickTemplate[];
   onAddTemplate: (tpl: QuickTemplate) => void;
-  onDeleteTemplate: (id: string) => void;
+  onDeleteTemplate: (tpl: QuickTemplate) => void;
   darkMode: boolean;
   onToggleDarkMode: () => void;
   enableBusinessModule: boolean;
@@ -187,17 +191,13 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
               <div className="text-[11px] text-slate-400">帳務結算週期基準日</div>
             </div>
           </div>
-          <select
-            value={monthStartDay}
-            onChange={(e) => onChangeMonthStartDay(parseInt(e.target.value, 10) || 1)}
-            className="h-8 px-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-bold text-slate-900 dark:text-white"
-          >
-            {Array.from({ length: 28 }, (_, i) => i + 1).map((d) => (
-              <option key={d} value={d}>
-                每月 {d} 日
-              </option>
-            ))}
-          </select>
+          <div className="w-32 shrink-0">
+            <DayOfMonthPickerButton
+              value={monthStartDay}
+              onChange={(d) => onChangeMonthStartDay(d || 1)}
+              label="選擇每月起始日"
+            />
+          </div>
         </div>
 
         {/* (B) 常用快捷範本（嚴格區分支出快捷與收入快捷） */}
@@ -263,20 +263,17 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
               />
             </div>
             <div className="flex items-center gap-1.5">
-              <select
-                value={tplCategoryId}
-                onChange={(e) => setTplCategoryId(e.target.value)}
-                className="flex-1 h-8 px-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-semibold text-slate-900 dark:text-white"
-              >
-                {tplFilteredCategories.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
+              <div className="flex-1 min-w-0">
+                <CategoryPickerButton
+                  categories={tplFilteredCategories}
+                  value={tplCategoryId}
+                  onChange={setTplCategoryId}
+                  label={tplType === 'expense' ? '選擇支出快捷分類' : '選擇收入快捷分類'}
+                />
+              </div>
               <button
                 type="submit"
-                className="h-8 px-3 rounded-lg bg-slate-900 dark:bg-emerald-600 text-white text-xs font-bold flex items-center gap-1 shrink-0"
+                className="h-10 px-3.5 rounded-xl bg-slate-900 dark:bg-emerald-600 text-white text-xs font-bold flex items-center gap-1 shrink-0"
               >
                 <Plus className="w-3.5 h-3.5" />
                 <span>新增</span>
@@ -298,9 +295,9 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
                       <span className="font-mono text-slate-500">${tpl.amount}</span>
                       <button
                         type="button"
-                        onClick={() => onDeleteTemplate(tpl.id)}
-                        className="w-5 h-5 rounded flex items-center justify-center text-slate-400 hover:text-rose-500"
-                        aria-label="刪除範本"
+                        onClick={() => onDeleteTemplate(tpl)}
+                        className="w-6 h-6 rounded flex items-center justify-center text-slate-400 hover:text-rose-500"
+                        aria-label={`刪除快捷範本 ${tpl.title}`}
                       >
                         <Trash2 className="w-3 h-3" />
                       </button>
@@ -321,9 +318,9 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
                       <span className="font-mono">${tpl.amount}</span>
                       <button
                         type="button"
-                        onClick={() => onDeleteTemplate(tpl.id)}
-                        className="w-5 h-5 rounded flex items-center justify-center text-slate-400 hover:text-rose-500"
-                        aria-label="刪除範本"
+                        onClick={() => onDeleteTemplate(tpl)}
+                        className="w-6 h-6 rounded flex items-center justify-center text-slate-400 hover:text-rose-500"
+                        aria-label={`刪除快捷範本 ${tpl.title}`}
                       >
                         <Trash2 className="w-3 h-3" />
                       </button>
@@ -357,23 +354,39 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
             onSubmit={handleAddCat}
             className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/70 dark:border-slate-700 space-y-2"
           >
-            <div className="grid grid-cols-3 gap-1.5">
+            <div className="flex items-center gap-1.5">
               <input
                 type="text"
                 required
                 placeholder="新分類名稱"
                 value={catName}
                 onChange={(e) => setCatName(e.target.value)}
-                className="col-span-2 h-8 px-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs text-slate-900 dark:text-white"
+                className="flex-1 min-w-0 h-8 px-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs text-slate-900 dark:text-white"
               />
-              <select
-                value={catType}
-                onChange={(e) => setCatType(e.target.value as 'expense' | 'income')}
-                className="h-8 px-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-semibold text-slate-900 dark:text-white"
-              >
-                <option value="expense">支出</option>
-                <option value="income">收入</option>
-              </select>
+              <div className="grid grid-cols-2 gap-0.5 p-0.5 bg-slate-200/70 dark:bg-slate-900 rounded-lg shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setCatType('expense')}
+                  className={`h-7 px-2.5 rounded-md text-xs font-bold transition ${
+                    catType === 'expense'
+                      ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-2xs'
+                      : 'text-slate-500'
+                  }`}
+                >
+                  支出
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCatType('income')}
+                  className={`h-7 px-2.5 rounded-md text-xs font-bold transition ${
+                    catType === 'income'
+                      ? 'bg-white dark:bg-slate-800 text-emerald-600 dark:text-emerald-400 shadow-2xs'
+                      : 'text-slate-500'
+                  }`}
+                >
+                  收入
+                </button>
+              </div>
             </div>
 
             <div className="flex items-center gap-1 overflow-x-auto no-scrollbar py-0.5">
