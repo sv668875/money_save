@@ -133,31 +133,31 @@ export const RecurringTab: React.FC<RecurringTabProps> = ({
   );
 
   return (
-    <div className="space-y-3.5">
+    <div className="space-y-3">
       {/* Header Banner */}
-      <div className="rounded-3xl bg-slate-900 text-white p-5 shadow-md border border-slate-800">
+      <div className="rounded-3xl bg-slate-900 text-white p-4.5 shadow-md border border-slate-800">
         <div className="flex items-center justify-between">
           <div>
             <span className="text-xs font-medium text-slate-400">長期累計投入</span>
-            <div className="text-xl font-mono font-bold tabular-nums text-sky-400 mt-1">
+            <div className="text-xl font-mono font-bold tabular-nums text-sky-400 mt-0.5">
               {formatTWD(totalLongTermInvested)}
             </div>
           </div>
           <button
             type="button"
             onClick={openAddModal}
-            className="px-3 py-1.5 rounded-xl bg-emerald-600 text-white text-xs font-bold flex items-center gap-1"
+            className="h-8 px-3 rounded-xl bg-emerald-600 text-white text-xs font-bold flex items-center gap-1"
           >
             <Plus className="w-3.5 h-3.5" />
-            <span>新增</span>
+            <span>新增規則</span>
           </button>
         </div>
       </div>
 
       {/* Section 1: Long-Term Investments */}
-      <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-4 space-y-2.5">
+      <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-3.5 space-y-2">
         <div className="flex items-center gap-1.5">
-          <TrendingUp className="w-4 h-4 text-sky-500" />
+          <TrendingUp className="w-3.5 h-3.5 text-sky-500" />
           <h3 className="text-xs font-bold text-slate-900 dark:text-white">
             定期定額 ({longTermRules.length})
           </h3>
@@ -207,6 +207,7 @@ export const RecurringTab: React.FC<RecurringTabProps> = ({
                   </div>
                 </div>
 
+                {/* Compact single-line action row */}
                 <div className="mt-2.5 pt-2 border-t border-slate-200/60 dark:border-slate-700/60 flex items-center justify-between gap-2">
                   <div>
                     {rule.isExecutedThisMonth ? (
@@ -221,7 +222,7 @@ export const RecurringTab: React.FC<RecurringTabProps> = ({
                           <button
                             type="button"
                             onClick={() => onExecuteRule(rule)}
-                            className="px-2.5 py-1 rounded-lg bg-slate-900 dark:bg-emerald-600 text-white text-xs font-semibold flex items-center gap-1"
+                            className="h-7 px-2.5 rounded-lg bg-slate-900 dark:bg-emerald-600 text-white text-[11px] font-semibold flex items-center gap-1"
                           >
                             <Check className="w-3 h-3" />
                             <span>入帳</span>
@@ -229,7 +230,7 @@ export const RecurringTab: React.FC<RecurringTabProps> = ({
                           <button
                             type="button"
                             onClick={() => onSkipRule(rule)}
-                            className="px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-700 text-xs text-slate-500"
+                            className="h-7 px-2 rounded-lg border border-slate-200 dark:border-slate-700 text-[11px] font-semibold text-slate-500"
                           >
                             跳過
                           </button>
@@ -242,21 +243,23 @@ export const RecurringTab: React.FC<RecurringTabProps> = ({
                     <button
                       type="button"
                       onClick={() => onTogglePauseRule(rule)}
-                      className="text-xs text-slate-500 hover:text-slate-800 dark:hover:text-white"
+                      className="text-[11px] font-semibold text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
                     >
                       {rule.status === 'paused' ? '恢復' : '暫停'}
                     </button>
+                    <span className="text-slate-300 dark:text-slate-700 text-[10px]">·</span>
                     <button
                       type="button"
                       onClick={() => openEditModal(rule)}
-                      className="text-xs text-slate-500 hover:text-slate-800 dark:hover:text-white"
+                      className="text-[11px] font-semibold text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
                     >
                       編輯
                     </button>
+                    <span className="text-slate-300 dark:text-slate-700 text-[10px]">·</span>
                     <button
                       type="button"
                       onClick={() => onDeleteRule(rule)}
-                      className="text-xs text-rose-500"
+                      className="text-[11px] font-semibold text-rose-500"
                     >
                       刪除
                     </button>
@@ -269,9 +272,9 @@ export const RecurringTab: React.FC<RecurringTabProps> = ({
       </div>
 
       {/* Section 2: Fixed Monthly Income & Expenses */}
-      <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-4 space-y-2.5">
+      <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-3.5 space-y-2">
         <div className="flex items-center gap-1.5">
-          <CalendarClock className="w-4 h-4 text-emerald-600" />
+          <CalendarClock className="w-3.5 h-3.5 text-emerald-600" />
           <h3 className="text-xs font-bold text-slate-900 dark:text-white">
             固定收支 ({fixedCashflowRules.length})
           </h3>
@@ -313,7 +316,7 @@ export const RecurringTab: React.FC<RecurringTabProps> = ({
                   </span>
                 </div>
 
-                <div className="pt-2 border-t border-slate-200/60 dark:border-slate-700/60 flex items-center justify-between">
+                <div className="pt-2 border-t border-slate-200/60 dark:border-slate-700/60 flex items-center justify-between gap-2">
                   <div>
                     {rule.isExecutedThisMonth ? (
                       <span className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
@@ -326,7 +329,7 @@ export const RecurringTab: React.FC<RecurringTabProps> = ({
                         <button
                           type="button"
                           onClick={() => onExecuteRule(rule)}
-                          className="px-2.5 py-1 rounded-lg bg-slate-900 dark:bg-emerald-600 text-white text-xs font-semibold"
+                          className="h-7 px-2.5 rounded-lg bg-slate-900 dark:bg-emerald-600 text-white text-[11px] font-semibold"
                         >
                           入帳
                         </button>
@@ -337,21 +340,23 @@ export const RecurringTab: React.FC<RecurringTabProps> = ({
                     <button
                       type="button"
                       onClick={() => onTogglePauseRule(rule)}
-                      className="text-xs text-slate-500"
+                      className="text-[11px] font-semibold text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
                     >
                       {rule.status === 'paused' ? '恢復' : '暫停'}
                     </button>
+                    <span className="text-slate-300 dark:text-slate-700 text-[10px]">·</span>
                     <button
                       type="button"
                       onClick={() => openEditModal(rule)}
-                      className="text-xs text-slate-500"
+                      className="text-[11px] font-semibold text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
                     >
                       編輯
                     </button>
+                    <span className="text-slate-300 dark:text-slate-700 text-[10px]">·</span>
                     <button
                       type="button"
                       onClick={() => onDeleteRule(rule)}
-                      className="text-xs text-rose-500"
+                      className="text-[11px] font-semibold text-rose-500"
                     >
                       刪除
                     </button>
@@ -366,7 +371,7 @@ export const RecurringTab: React.FC<RecurringTabProps> = ({
       {/* Add / Edit Recurring Rule Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
-          <div className="w-full max-w-sm rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 shadow-xl max-h-[90vh] overflow-y-auto">
+          <div className="w-full max-w-sm rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-4 shadow-xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-sm font-bold text-slate-900 dark:text-white">
                 {editingRule ? '編輯規則' : '新增規則'}
@@ -374,7 +379,7 @@ export const RecurringTab: React.FC<RecurringTabProps> = ({
               <button
                 type="button"
                 onClick={() => setIsModalOpen(false)}
-                className="p-1.5 rounded-lg text-slate-400"
+                className="w-7 h-7 flex items-center justify-center rounded-lg text-slate-400"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -393,7 +398,7 @@ export const RecurringTab: React.FC<RecurringTabProps> = ({
                     key={item.id}
                     type="button"
                     onClick={() => setKind(item.id)}
-                    className={`py-1.5 text-xs font-semibold rounded-lg transition ${
+                    className={`h-8 text-xs font-semibold rounded-lg transition ${
                       kind === item.id
                         ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-2xs'
                         : 'text-slate-500'
@@ -405,20 +410,20 @@ export const RecurringTab: React.FC<RecurringTabProps> = ({
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-500 mb-1">名稱</label>
+                <label className="block text-[11px] font-semibold text-slate-500 mb-1">名稱</label>
                 <input
                   type="text"
                   required
                   placeholder="例如：0050 定期定額"
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
-                  className="w-full min-h-[40px] px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs text-slate-900 dark:text-white"
+                  className="w-full h-9 px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs text-slate-900 dark:text-white"
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-2.5">
+              <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-500 mb-1">
+                  <label className="block text-[11px] font-semibold text-slate-500 mb-1">
                     金額 (NT$)
                   </label>
                   <input
@@ -428,17 +433,17 @@ export const RecurringTab: React.FC<RecurringTabProps> = ({
                     min="1"
                     value={amountStr}
                     onChange={(e) => setAmountStr(e.target.value)}
-                    className="w-full min-h-[40px] px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-mono text-slate-900 dark:text-white"
+                    className="w-full h-9 px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-mono text-slate-900 dark:text-white"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-500 mb-1">
+                  <label className="block text-[11px] font-semibold text-slate-500 mb-1">
                     扣款日
                   </label>
                   <select
                     value={dayOfMonth}
                     onChange={(e) => setDayOfMonth(e.target.value)}
-                    className="w-full min-h-[40px] px-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-mono text-slate-900 dark:text-white"
+                    className="w-full h-9 px-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-mono text-slate-900 dark:text-white"
                   >
                     {Array.from({ length: 28 }, (_, i) => i + 1).map((d) => (
                       <option key={d} value={String(d)}>
@@ -449,15 +454,15 @@ export const RecurringTab: React.FC<RecurringTabProps> = ({
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-2.5">
+              <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-500 mb-1">
+                  <label className="block text-[11px] font-semibold text-slate-500 mb-1">
                     {kind === 'fixed_income' ? '入帳帳戶' : '扣款帳戶'}
                   </label>
                   <select
                     value={accountId}
                     onChange={(e) => setAccountId(e.target.value)}
-                    className="w-full min-h-[40px] px-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-medium text-slate-900 dark:text-white"
+                    className="w-full h-9 px-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-medium text-slate-900 dark:text-white"
                   >
                     {activeAccounts.map((acc) => (
                       <option key={acc.id} value={acc.id}>
@@ -469,13 +474,13 @@ export const RecurringTab: React.FC<RecurringTabProps> = ({
 
                 {kind === 'long_term_invest' ? (
                   <div>
-                    <label className="block text-xs font-semibold text-slate-500 mb-1">
+                    <label className="block text-[11px] font-semibold text-slate-500 mb-1">
                       轉入帳戶
                     </label>
                     <select
                       value={toAccountId}
                       onChange={(e) => setToAccountId(e.target.value)}
-                      className="w-full min-h-[40px] px-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-medium text-slate-900 dark:text-white"
+                      className="w-full h-9 px-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-medium text-slate-900 dark:text-white"
                     >
                       {activeAccounts.map((acc) => (
                         <option key={acc.id} value={acc.id}>
@@ -486,13 +491,13 @@ export const RecurringTab: React.FC<RecurringTabProps> = ({
                   </div>
                 ) : (
                   <div>
-                    <label className="block text-xs font-semibold text-slate-500 mb-1">
+                    <label className="block text-[11px] font-semibold text-slate-500 mb-1">
                       分類
                     </label>
                     <select
                       value={categoryId}
                       onChange={(e) => setCategoryId(e.target.value)}
-                      className="w-full min-h-[40px] px-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-medium text-slate-900 dark:text-white"
+                      className="w-full h-9 px-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-medium text-slate-900 dark:text-white"
                     >
                       {activeCategories
                         .filter(
@@ -512,7 +517,7 @@ export const RecurringTab: React.FC<RecurringTabProps> = ({
                 <button
                   type="button"
                   onClick={() => setPaymentMode('auto')}
-                  className={`min-h-[36px] rounded-xl text-xs font-semibold border ${
+                  className={`h-8 rounded-xl text-xs font-semibold border ${
                     paymentMode === 'auto'
                       ? 'border-emerald-600 bg-emerald-50 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
                       : 'border-slate-200 dark:border-slate-700 text-slate-500'
@@ -523,7 +528,7 @@ export const RecurringTab: React.FC<RecurringTabProps> = ({
                 <button
                   type="button"
                   onClick={() => setPaymentMode('manual')}
-                  className={`min-h-[36px] rounded-xl text-xs font-semibold border ${
+                  className={`h-8 rounded-xl text-xs font-semibold border ${
                     paymentMode === 'manual'
                       ? 'border-emerald-600 bg-emerald-50 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
                       : 'border-slate-200 dark:border-slate-700 text-slate-500'
@@ -534,24 +539,24 @@ export const RecurringTab: React.FC<RecurringTabProps> = ({
               </div>
 
               {kind === 'long_term_invest' && (
-                <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/70 dark:border-slate-700 space-y-2">
-                  <div className="text-xs font-bold text-slate-700 dark:text-slate-200">
+                <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/70 dark:border-slate-700 space-y-2">
+                  <div className="text-[11px] font-bold text-slate-700 dark:text-slate-200">
                     既有累積設定
                   </div>
                   <div className="grid grid-cols-2 gap-2">
                     <div>
-                      <label className="block text-[11px] text-slate-500 mb-1">既有期數</label>
+                      <label className="block text-[10px] text-slate-500 mb-0.5">既有期數</label>
                       <input
                         type="number"
                         inputMode="decimal"
                         min="0"
                         value={initPeriodsStr}
                         onChange={(e) => setInitPeriodsStr(e.target.value)}
-                        className="w-full min-h-[36px] px-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-mono text-slate-900 dark:text-white"
+                        className="w-full h-8 px-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-mono text-slate-900 dark:text-white"
                       />
                     </div>
                     <div>
-                      <label className="block text-[11px] text-slate-500 mb-1">
+                      <label className="block text-[10px] text-slate-500 mb-0.5">
                         既有金額
                       </label>
                       <input
@@ -560,24 +565,24 @@ export const RecurringTab: React.FC<RecurringTabProps> = ({
                         min="0"
                         value={initAmountStr}
                         onChange={(e) => setInitAmountStr(e.target.value)}
-                        className="w-full min-h-[36px] px-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-mono text-slate-900 dark:text-white"
+                        className="w-full h-8 px-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-mono text-slate-900 dark:text-white"
                       />
                     </div>
                   </div>
                 </div>
               )}
 
-              <div className="pt-2 grid grid-cols-2 gap-2">
+              <div className="pt-1 grid grid-cols-2 gap-2">
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
-                  className="min-h-[42px] rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-600 dark:text-slate-300"
+                  className="h-9 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-600 dark:text-slate-300"
                 >
                   取消
                 </button>
                 <button
                   type="submit"
-                  className="min-h-[42px] rounded-xl bg-slate-900 dark:bg-emerald-600 text-white text-xs font-semibold"
+                  className="h-9 rounded-xl bg-slate-900 dark:bg-emerald-600 text-white text-xs font-semibold"
                 >
                   儲存
                 </button>

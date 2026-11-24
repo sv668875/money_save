@@ -1,6 +1,6 @@
 import { Account, Category, LedgerData, RecurringRule, Transaction } from './types';
 
-const STORAGE_KEY = 'simple_ledger_v1_data';
+const STORAGE_KEY = 'simple_ledger_v2_data';
 
 export interface IStorageRepository {
   loadAll(): LedgerData;
@@ -391,13 +391,15 @@ export function createDemoData(): LedgerData {
       categoryId: 'cat_home',
       note: '全聯採買日用品與鮮奶',
     },
-    // 代墊與雙向互抵範例
+    // 1. 與「我 ('SELF')」相關的代墊與雙向互抵範例
     {
       id: 'tx_debt_1',
       type: 'debt',
       amount: 2600,
       date: `${m0}-09`,
       accountId: 'acc_cube',
+      payerName: 'SELF',
+      debtorName: '阿哲',
       personName: '阿哲',
       debtDirection: 'i_lent',
       note: '幫墊居酒屋聚餐刷卡',
@@ -407,9 +409,12 @@ export function createDemoData(): LedgerData {
       type: 'debt',
       amount: 1100,
       date: `${m0}-14`,
-      accountId: 'acc_cash',
+      accountId: '',
+      payerName: '阿哲',
+      debtorName: 'SELF',
       personName: '阿哲',
       debtDirection: 'they_lent',
+      categoryId: 'cat_home',
       note: '阿哲幫買日本合利他命',
     },
     {
@@ -418,6 +423,8 @@ export function createDemoData(): LedgerData {
       amount: 3800,
       date: `${m0}-06`,
       accountId: 'acc_richart',
+      payerName: 'SELF',
+      debtorName: '小美',
       personName: '小美',
       debtDirection: 'i_lent',
       note: '代墊大巨蛋演唱會門票',
@@ -428,6 +435,8 @@ export function createDemoData(): LedgerData {
       amount: 1800,
       date: `${m0}-12`,
       accountId: 'acc_richart',
+      payerName: '小美',
+      debtorName: 'SELF',
       personName: '小美',
       debtDirection: 'i_lent',
       note: '小美 LINE Pay 先還部分票款',
@@ -438,9 +447,32 @@ export function createDemoData(): LedgerData {
       amount: 1500,
       date: `${m1}-18`,
       accountId: 'acc_cash',
+      payerName: 'SELF',
+      debtorName: '前場主阿凱',
       personName: '前場主阿凱',
       debtDirection: 'i_lent',
-      note: '代墊機台搬運推車押金（已失聯）',
+      note: '代墊機台搬運推車押金',
+    },
+    // 2. 他人之間 (A ↔ B) 第三方代墊範例（完全獨立於我的個人帳戶與月收支）
+    {
+      id: 'tx_debt_3p_1',
+      type: 'debt',
+      amount: 900,
+      date: `${m0}-15`,
+      accountId: '',
+      payerName: '阿哲',
+      debtorName: '小美',
+      note: '聚餐續攤 KTV 阿哲先幫小美墊付',
+    },
+    {
+      id: 'tx_debt_3p_2',
+      type: 'debt',
+      amount: 650,
+      date: `${m0}-18`,
+      accountId: '',
+      payerName: '小華',
+      debtorName: '阿哲',
+      note: '露營食材與烤肉網分攤（小華先墊）',
     },
   ];
 
@@ -513,7 +545,7 @@ class LocalStorageRepository implements IStorageRepository {
     return JSON.stringify(
       {
         app: 'SimpleLedger',
-        version: '1.0.0',
+        version: '2.0.0',
         exportedAt: new Date().toISOString(),
         data,
       },
@@ -558,8 +590,8 @@ class LocalStorageRepository implements IStorageRepository {
       '目標帳戶',
       '分類',
       '收入性質',
-      '往來對象',
-      '借貸方向',
+      '出錢方(Payer)',
+      '分攤/欠款方(Debtor)',
       '呆帳核銷',
       '分期進度',
       '備註',
@@ -581,25 +613,23 @@ class LocalStorageRepository implements IStorageRepository {
         t.installmentTotal && t.installmentIndex
           ? `${t.installmentIndex}/${t.installmentTotal}`
           : '';
-      const dirText =
-        t.debtDirection === 'i_lent'
-          ? '我代墊(應收)'
-          : t.debtDirection === 'they_lent'
-          ? '對方墊(應付)'
-          : '';
       const incText =
         t.incomeKind === 'fixed' ? '固定收入' : t.incomeKind === 'variable' ? '浮動收入' : '';
+      const payerText =
+        t.payerName === 'SELF' ? '我' : t.payerName || (t.debtDirection === 'i_lent' ? '我' : t.personName || '');
+      const debtorText =
+        t.debtorName === 'SELF' ? '我' : t.debtorName || (t.debtDirection === 'they_lent' ? '我' : t.personName || '');
 
       return [
         t.date,
         typeLabels[t.type] || t.type,
         t.amount,
-        accountMap.get(t.accountId) || t.accountId,
+        t.accountId ? accountMap.get(t.accountId) || t.accountId : '無(他人代墊)',
         t.toAccountId ? accountMap.get(t.toAccountId) || t.toAccountId : '',
         t.categoryId ? categoryMap.get(t.categoryId) || t.categoryId : '',
         incText,
-        t.personName || '',
-        dirText,
+        payerText,
+        debtorText,
         t.isBadDebtWriteOff ? '是' : '',
         instText,
         t.note,

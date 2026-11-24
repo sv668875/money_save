@@ -2,8 +2,10 @@ import React, { useState } from 'react';
 import { Layers, Plus, Search } from 'lucide-react';
 import {
   calculateInstallmentGroups,
+  formatPartyDisplayName,
   formatTWD,
   InstallmentGroupSummary,
+  resolveDebtParties,
 } from '../calculations';
 import { Account, Category, Transaction } from '../types';
 import { CategoryIcon, MonthStepper } from './SharedUI';
@@ -47,12 +49,11 @@ export const LedgerTab: React.FC<LedgerTabProps> = ({
       if (!showAllMonths && !tx.date.startsWith(monthKey)) return false;
 
       const cat = tx.categoryId ? categoryMap.get(tx.categoryId) : undefined;
-      const acc = accountMap.get(tx.accountId);
+      const acc = tx.accountId ? accountMap.get(tx.accountId) : undefined;
       const isBiz = Boolean(
         cat?.isBusiness || acc?.isBusinessWorkingCapital || acc?.type === 'business_cashbox'
       );
 
-      // 若未開啟機台模組，預設隱藏機台交易
       if (!enableBusinessModule && isBiz) return false;
 
       if (filterMode === 'personal' && (isBiz || tx.type === 'debt' || tx.type === 'repay')) {
@@ -67,7 +68,10 @@ export const LedgerTab: React.FC<LedgerTabProps> = ({
         const matchNote = tx.note.toLowerCase().includes(q);
         const matchCat = cat?.name.toLowerCase().includes(q);
         const matchAcc = acc?.name.toLowerCase().includes(q);
-        const matchPerson = tx.personName?.toLowerCase().includes(q);
+        const matchPerson =
+          tx.personName?.toLowerCase().includes(q) ||
+          tx.payerName?.toLowerCase().includes(q) ||
+          tx.debtorName?.toLowerCase().includes(q);
         return Boolean(matchNote || matchCat || matchAcc || matchPerson);
       }
 
@@ -92,9 +96,9 @@ export const LedgerTab: React.FC<LedgerTabProps> = ({
   ];
 
   return (
-    <div className="space-y-3.5">
+    <div className="space-y-3">
       {/* Top Filter & Search Bar */}
-      <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-3.5 space-y-2.5">
+      <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-3 space-y-2">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-1.5">
             <MonthStepper
@@ -105,7 +109,7 @@ export const LedgerTab: React.FC<LedgerTabProps> = ({
             <button
               type="button"
               onClick={() => setShowAllMonths(!showAllMonths)}
-              className={`px-2.5 h-8 rounded-xl text-xs font-semibold border transition whitespace-nowrap ${
+              className={`h-7 px-2.5 rounded-lg text-[11px] font-semibold border transition whitespace-nowrap ${
                 showAllMonths
                   ? 'bg-slate-900 text-white border-slate-900 dark:bg-emerald-600 dark:border-emerald-600'
                   : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'
@@ -114,31 +118,31 @@ export const LedgerTab: React.FC<LedgerTabProps> = ({
               {showAllMonths ? '跨月' : '當月'}
             </button>
           </div>
-          <span className="text-xs font-mono text-slate-400 shrink-0">
+          <span className="text-[11px] font-mono text-slate-400 shrink-0">
             {filteredTxs.length} 筆
           </span>
         </div>
 
         {/* Search Input */}
         <div className="relative">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+          <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             type="text"
             placeholder="搜尋備註、分類、對象..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full min-h-[38px] pl-9 pr-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/70 text-xs text-slate-900 dark:text-white"
+            className="w-full h-8 pl-8 pr-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/70 text-xs text-slate-900 dark:text-white"
           />
         </div>
 
-        {/* Interactive Filter Tabs */}
-        <div className="flex items-center gap-1 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl">
+        {/* Sleek Segmented Filter Tabs */}
+        <div className="flex items-center gap-1 p-0.5 bg-slate-100 dark:bg-slate-800 rounded-xl">
           {filterTabs.map((tab) => (
             <button
               key={tab.id}
               type="button"
               onClick={() => setFilterMode(tab.id)}
-              className={`flex-1 py-1.5 px-2 text-xs font-semibold rounded-lg transition whitespace-nowrap ${
+              className={`flex-1 h-7 px-2 text-xs font-semibold rounded-lg transition whitespace-nowrap ${
                 filterMode === tab.id
                   ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-2xs'
                   : 'text-slate-500 dark:text-slate-400'
@@ -152,9 +156,9 @@ export const LedgerTab: React.FC<LedgerTabProps> = ({
 
       {/* Installment Tracking Cards */}
       {(filterMode === 'all' || filterMode === 'installment') && installmentGroups.length > 0 && (
-        <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-4 space-y-2.5">
+        <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-3.5 space-y-2">
           <div className="flex items-center gap-1.5">
-            <Layers className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+            <Layers className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
             <h3 className="text-xs font-bold text-slate-900 dark:text-white">
               分期進度 ({installmentGroups.length})
             </h3>
@@ -169,14 +173,14 @@ export const LedgerTab: React.FC<LedgerTabProps> = ({
               return (
                 <div
                   key={group.groupId}
-                  className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/70 space-y-2"
+                  className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/70 space-y-1.5"
                 >
-                  <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-center justify-between gap-2">
                     <div className="min-w-0">
                       <div className="text-xs font-bold text-slate-900 dark:text-white truncate">
                         {group.title}
                       </div>
-                      <div className="text-[11px] text-slate-500 mt-0.5">
+                      <div className="text-[11px] text-slate-500">
                         {acc?.name} · 每期 {formatTWD(group.monthlyAmount)}
                       </div>
                     </div>
@@ -184,7 +188,7 @@ export const LedgerTab: React.FC<LedgerTabProps> = ({
                       <button
                         type="button"
                         onClick={() => onRecordNextInstallment(group)}
-                        className="px-2.5 py-1 rounded-lg bg-slate-900 dark:bg-emerald-600 text-white text-xs font-semibold flex items-center gap-1 shrink-0"
+                        className="h-7 px-2.5 rounded-lg bg-slate-900 dark:bg-emerald-600 text-white text-[11px] font-semibold flex items-center gap-1 shrink-0"
                       >
                         <Plus className="w-3 h-3" />
                         <span>第 {group.paidPeriods + 1} 期</span>
@@ -199,7 +203,7 @@ export const LedgerTab: React.FC<LedgerTabProps> = ({
                     />
                   </div>
 
-                  <div className="flex items-center justify-between text-[11px] font-mono text-slate-400">
+                  <div className="flex items-center justify-between text-[10px] font-mono text-slate-400">
                     <span>
                       {group.paidPeriods}/{group.totalPeriods} 期
                     </span>
@@ -235,7 +239,7 @@ export const LedgerTab: React.FC<LedgerTabProps> = ({
 
                 <div className="divide-y divide-slate-100 dark:divide-slate-800">
                   {dayTxs.map((tx) => {
-                    const acc = accountMap.get(tx.accountId);
+                    const acc = tx.accountId ? accountMap.get(tx.accountId) : undefined;
                     const toAcc = tx.toAccountId ? accountMap.get(tx.toAccountId) : undefined;
                     const cat = tx.categoryId ? categoryMap.get(tx.categoryId) : undefined;
                     const isBiz = Boolean(
@@ -243,6 +247,10 @@ export const LedgerTab: React.FC<LedgerTabProps> = ({
                         acc?.isBusinessWorkingCapital ||
                         acc?.type === 'business_cashbox'
                     );
+
+                    const parties = resolveDebtParties(tx);
+                    const pDisp = parties ? formatPartyDisplayName(parties.payer) : '';
+                    const dDisp = parties ? formatPartyDisplayName(parties.debtor) : '';
 
                     let amountColor = 'text-slate-900 dark:text-white';
                     let signPrefix = '';
@@ -253,10 +261,13 @@ export const LedgerTab: React.FC<LedgerTabProps> = ({
                       amountColor = 'text-emerald-600 dark:text-emerald-400';
                       signPrefix = '+';
                     } else if (tx.type === 'debt') {
-                      amountColor =
-                        tx.debtDirection === 'i_lent'
-                          ? 'text-amber-600 dark:text-amber-400'
-                          : 'text-purple-600 dark:text-purple-400';
+                      if (parties?.payer === 'SELF') {
+                        amountColor = 'text-amber-600 dark:text-amber-400';
+                      } else if (parties?.debtor === 'SELF') {
+                        amountColor = 'text-purple-600 dark:text-purple-400';
+                      } else {
+                        amountColor = 'text-sky-600 dark:text-sky-400';
+                      }
                     } else if (tx.type === 'adjustment') {
                       signPrefix = tx.toAccountId === tx.accountId ? '+' : '-';
                     }
@@ -265,12 +276,14 @@ export const LedgerTab: React.FC<LedgerTabProps> = ({
                       tx.type === 'transfer'
                         ? `${acc?.name || '帳戶'} → ${toAcc?.name || '目標'}`
                         : tx.type === 'debt'
-                        ? tx.debtDirection === 'i_lent'
-                          ? `代墊 · ${tx.personName}`
-                          : `${tx.personName} · 墊付`
+                        ? parties
+                          ? `${pDisp} 幫 ${dDisp} 代墊`
+                          : `代墊 · ${tx.personName}`
                         : tx.type === 'repay'
                         ? tx.isBadDebtWriteOff
-                          ? `呆帳 · ${tx.personName}`
+                          ? `呆帳核銷 · ${pDisp}`
+                          : parties
+                          ? `${pDisp} 還給 ${dDisp}`
                           : `還款 · ${tx.personName}`
                         : tx.type === 'adjustment'
                         ? `${acc?.name} 校正`
@@ -306,7 +319,7 @@ export const LedgerTab: React.FC<LedgerTabProps> = ({
                               )}
                             </div>
                             <div className="text-[11px] text-slate-400 truncate">
-                              <span>{acc?.name}</span>
+                              <span>{acc ? acc.name : '無個人帳戶變動'}</span>
                               {tx.note && (
                                 <>
                                   <span className="mx-1">·</span>
@@ -318,21 +331,26 @@ export const LedgerTab: React.FC<LedgerTabProps> = ({
                         </div>
 
                         <div className="text-right shrink-0">
-                          <div className={`text-xs font-mono font-bold tabular-nums ${amountColor}`}>
+                          <div
+                            className={`text-xs font-mono font-bold tabular-nums ${amountColor}`}
+                          >
                             {signPrefix}NT$ {tx.amount.toLocaleString('zh-TW')}
                           </div>
-                          <div className="flex items-center justify-end gap-2 mt-0.5">
+                          <div className="flex items-center justify-end gap-1.5 mt-0.5">
                             <button
                               type="button"
                               onClick={() => onEditTransaction(tx)}
-                              className="text-[11px] text-slate-400 hover:text-slate-900 dark:hover:text-white"
+                              className="px-1 py-0.5 text-[11px] font-medium text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
                             >
                               編輯
                             </button>
+                            <span className="text-slate-300 dark:text-slate-700 text-[10px]">
+                              ·
+                            </span>
                             <button
                               type="button"
                               onClick={() => onDeleteTransaction(tx)}
-                              className="text-[11px] text-rose-500"
+                              className="px-1 py-0.5 text-[11px] font-medium text-rose-500 hover:underline"
                             >
                               刪除
                             </button>

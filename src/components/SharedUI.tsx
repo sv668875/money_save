@@ -30,8 +30,8 @@ import { getTodayDateString } from '../storage';
 export const BrandLogo: React.FC = () => (
   <div className="flex items-center select-none" aria-label="Logo">
     <svg
-      width="32"
-      height="32"
+      width="30"
+      height="30"
       viewBox="0 0 36 36"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
@@ -130,7 +130,39 @@ export const ACCOUNT_TYPE_LABELS: Record<AccountType, string> = {
 };
 
 /**
- * 免打字互動式月份選擇器（左右箭頭 + 點擊展開月份面板）
+ * 簡約精緻的年份切換器 (< 2026 年 >)
+ */
+export const YearStepper: React.FC<{
+  year: number;
+  onChange: (newYear: number) => void;
+}> = ({ year, onChange }) => {
+  return (
+    <div className="inline-flex items-center bg-slate-100 dark:bg-slate-800 rounded-xl p-0.5 border border-slate-200/70 dark:border-slate-700">
+      <button
+        type="button"
+        onClick={() => onChange(year - 1)}
+        className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700 transition"
+        aria-label="上一年"
+      >
+        <ChevronLeft className="w-3.5 h-3.5" />
+      </button>
+      <span className="px-2 h-7 flex items-center justify-center text-xs font-mono font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">
+        {year}年
+      </span>
+      <button
+        type="button"
+        onClick={() => onChange(year + 1)}
+        className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700 transition"
+        aria-label="下一年"
+      >
+        <ChevronRight className="w-3.5 h-3.5" />
+      </button>
+    </div>
+  );
+};
+
+/**
+ * 簡約精緻的月份切換器
  */
 export const MonthStepper: React.FC<{
   monthKey: string;
@@ -164,7 +196,7 @@ export const MonthStepper: React.FC<{
           className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700 transition"
           aria-label="上個月"
         >
-          <ChevronLeft className="w-4 h-4" />
+          <ChevronLeft className="w-3.5 h-3.5" />
         </button>
         <button
           type="button"
@@ -172,7 +204,7 @@ export const MonthStepper: React.FC<{
             setPickerYear(year);
             setOpenPicker(true);
           }}
-          className="px-2.5 h-7 text-xs font-mono font-bold text-slate-800 dark:text-slate-100 hover:bg-white dark:hover:bg-slate-700 rounded-lg transition whitespace-nowrap"
+          className="px-2 h-7 text-xs font-mono font-bold text-slate-800 dark:text-slate-100 hover:bg-white dark:hover:bg-slate-700 rounded-lg transition whitespace-nowrap"
         >
           {year}年{month}月
         </button>
@@ -182,7 +214,7 @@ export const MonthStepper: React.FC<{
           className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700 transition"
           aria-label="下個月"
         >
-          <ChevronRight className="w-4 h-4" />
+          <ChevronRight className="w-3.5 h-3.5" />
         </button>
       </div>
 
@@ -193,7 +225,7 @@ export const MonthStepper: React.FC<{
               <button
                 type="button"
                 onClick={() => setPickerYear((y) => y - 1)}
-                className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center"
+                className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-700 dark:text-slate-200"
               >
                 <ChevronLeft className="w-4 h-4" />
               </button>
@@ -203,7 +235,7 @@ export const MonthStepper: React.FC<{
               <button
                 type="button"
                 onClick={() => setPickerYear((y) => y + 1)}
-                className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center"
+                className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-700 dark:text-slate-200"
               >
                 <ChevronRight className="w-4 h-4" />
               </button>
@@ -221,7 +253,7 @@ export const MonthStepper: React.FC<{
                       onChange(mk);
                       setOpenPicker(false);
                     }}
-                    className={`py-2.5 rounded-xl text-xs font-bold transition ${
+                    className={`py-2 rounded-xl text-xs font-bold transition ${
                       isSelected
                         ? 'bg-slate-900 text-white dark:bg-emerald-600'
                         : 'bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100'
@@ -248,7 +280,7 @@ export const MonthStepper: React.FC<{
 };
 
 /**
- * 免打字互動式日曆選擇器（含「今天 / 昨天 / 前天」快捷鍵與月曆網格）
+ * 簡約互動式日曆選擇器
  */
 export const DatePickerButton: React.FC<{
   value: string;
@@ -298,45 +330,42 @@ export const DatePickerButton: React.FC<{
 
   return (
     <>
-      <div className="space-y-1.5">
-        <div className="flex items-center gap-1.5">
-          <button
-            type="button"
-            onClick={openCalendar}
-            className="flex-1 min-h-[42px] px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-mono font-bold text-slate-900 dark:text-white flex items-center justify-between hover:border-emerald-500 transition"
-          >
-            <span>{friendlyLabel}</span>
-            <Calendar className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-          </button>
-          <button
-            type="button"
-            onClick={() => onChange(todayStr)}
-            className={`min-h-[42px] px-2.5 rounded-xl text-xs font-semibold border transition ${
-              value === todayStr
-                ? 'bg-slate-900 text-white border-slate-900 dark:bg-emerald-600 dark:border-emerald-600'
-                : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'
-            }`}
-          >
-            今天
-          </button>
-          <button
-            type="button"
-            onClick={() => onChange(yesterdayStr)}
-            className={`min-h-[42px] px-2.5 rounded-xl text-xs font-semibold border transition ${
-              value === yesterdayStr
-                ? 'bg-slate-900 text-white border-slate-900 dark:bg-emerald-600 dark:border-emerald-600'
-                : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'
-            }`}
-          >
-            昨天
-          </button>
-        </div>
+      <div className="flex items-center gap-1.5">
+        <button
+          type="button"
+          onClick={openCalendar}
+          className="flex-1 h-9 px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-mono font-bold text-slate-900 dark:text-white flex items-center justify-between hover:border-emerald-500 transition"
+        >
+          <span>{friendlyLabel}</span>
+          <Calendar className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+        </button>
+        <button
+          type="button"
+          onClick={() => onChange(todayStr)}
+          className={`h-9 px-2.5 rounded-xl text-xs font-semibold border transition ${
+            value === todayStr
+              ? 'bg-slate-900 text-white border-slate-900 dark:bg-emerald-600 dark:border-emerald-600'
+              : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+          }`}
+        >
+          今天
+        </button>
+        <button
+          type="button"
+          onClick={() => onChange(yesterdayStr)}
+          className={`h-9 px-2.5 rounded-xl text-xs font-semibold border transition ${
+            value === yesterdayStr
+              ? 'bg-slate-900 text-white border-slate-900 dark:bg-emerald-600 dark:border-emerald-600'
+              : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+          }`}
+        >
+          昨天
+        </button>
       </div>
 
       {isOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
           <div className="w-full max-w-xs rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-4 shadow-2xl">
-            {/* Quick Date Chips */}
             <div className="grid grid-cols-3 gap-1.5 mb-3">
               {[
                 { label: '今天', val: todayStr },
@@ -361,7 +390,6 @@ export const DatePickerButton: React.FC<{
               ))}
             </div>
 
-            {/* Month Header */}
             <div className="flex items-center justify-between mb-2">
               <button
                 type="button"
@@ -382,7 +410,6 @@ export const DatePickerButton: React.FC<{
               </button>
             </div>
 
-            {/* Weekday Header */}
             <div className="grid grid-cols-7 text-center text-[11px] font-semibold text-slate-400 mb-1">
               {['日', '一', '二', '三', '四', '五', '六'].map((d) => (
                 <div key={d} className="py-1">
@@ -391,7 +418,6 @@ export const DatePickerButton: React.FC<{
               ))}
             </div>
 
-            {/* Days Grid */}
             <div className="grid grid-cols-7 gap-1">
               {Array.from({ length: firstDayOfWeek }, (_, i) => (
                 <div key={`empty_${i}`} />
@@ -412,7 +438,7 @@ export const DatePickerButton: React.FC<{
                       onChange(fullStr);
                       setIsOpen(false);
                     }}
-                    className={`h-9 rounded-xl text-xs font-mono font-bold flex items-center justify-center transition ${
+                    className={`h-8 rounded-lg text-xs font-mono font-bold flex items-center justify-center transition ${
                       isSelected
                         ? 'bg-slate-900 text-white dark:bg-emerald-600'
                         : isToday
@@ -451,7 +477,7 @@ export const ToastContainer: React.FC<{
       {toasts.map((t) => (
         <div
           key={t.id}
-          className={`pointer-events-auto flex items-center justify-between gap-2.5 px-4 py-3 rounded-2xl shadow-lg border text-sm font-medium transition-all ${
+          className={`pointer-events-auto flex items-center justify-between gap-2 px-3.5 py-2.5 rounded-2xl shadow-lg border text-xs font-semibold transition-all ${
             t.type === 'success'
               ? 'bg-slate-900 text-white border-slate-800 dark:bg-emerald-600 dark:border-emerald-500'
               : t.type === 'error'
@@ -463,11 +489,11 @@ export const ToastContainer: React.FC<{
         >
           <div className="flex items-center gap-2">
             {t.type === 'success' ? (
-              <CheckCircle2 className="w-4 h-4 text-emerald-400 dark:text-white shrink-0" />
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 dark:text-white shrink-0" />
             ) : t.type === 'error' || t.type === 'warning' ? (
-              <AlertTriangle className="w-4 h-4 shrink-0" />
+              <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
             ) : (
-              <Info className="w-4 h-4 shrink-0" />
+              <Info className="w-3.5 h-3.5 shrink-0" />
             )}
             <span>{t.text}</span>
           </div>
@@ -495,29 +521,29 @@ export const ConfirmModal: React.FC<{
       <div className="w-full max-w-sm rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 shadow-xl">
         <div className="flex items-start gap-3">
           <div
-            className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+            className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
               config.danger
                 ? 'bg-rose-50 text-rose-600 dark:bg-rose-950/60 dark:text-rose-400'
                 : 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/60 dark:text-emerald-400'
             }`}
           >
-            <AlertTriangle className="w-5 h-5" />
+            <AlertTriangle className="w-4 h-4" />
           </div>
           <div className="flex-1 min-w-0">
-            <h3 className="text-base font-bold text-slate-900 dark:text-white">
+            <h3 className="text-sm font-bold text-slate-900 dark:text-white">
               {config.title}
             </h3>
-            <p className="mt-1.5 text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+            <p className="mt-1 text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
               {config.description}
             </p>
           </div>
         </div>
 
-        <div className="mt-5 grid grid-cols-2 gap-2.5">
+        <div className="mt-4 grid grid-cols-2 gap-2">
           <button
             type="button"
             onClick={onClose}
-            className="min-h-[44px] rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-sm font-semibold hover:bg-slate-50 dark:hover:bg-slate-700 transition"
+            className="h-9 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-semibold hover:bg-slate-50 transition"
           >
             {config.cancelLabel || '取消'}
           </button>
@@ -527,7 +553,7 @@ export const ConfirmModal: React.FC<{
               config.onConfirm();
               onClose();
             }}
-            className={`min-h-[44px] rounded-xl text-white text-sm font-semibold transition ${
+            className={`h-9 rounded-xl text-white text-xs font-semibold transition ${
               config.danger
                 ? 'bg-rose-600 hover:bg-rose-500'
                 : 'bg-slate-900 dark:bg-emerald-600 hover:opacity-95'

@@ -24,13 +24,16 @@ export interface Transaction {
   type: TransactionType;
   amount: number;                    // 正數金額（NT$）
   date: string;                      // YYYY-MM-DD
-  accountId: string;                 // 主帳戶（支出/借出/轉出/校正）
+  accountId: string;                 // 主帳戶（支出/借出/轉出/校正；若為第三方 A<->B 代墊可為空字串 ''）
   toAccountId?: string;              // 轉帳目標帳戶（若為 adjustment 且 toAccountId === accountId 代表調增，否則代表調減）
   categoryId?: string;
   incomeKind?: 'fixed' | 'variable'; // 區分固定 / 不固定收入
   note: string;
-  // 代墊與雙向互抵欄位
-  personName?: string;               // 對象姓名
+  // 通用多方代墊與雙向互抵欄位（以 'SELF' 代表使用者本人，其餘為聯絡人姓名）
+  payerName?: string;                // 實際出錢／還款的人（例如 'SELF'、'小明'）
+  debtorName?: string;               // 欠錢／應分攤／收還款的人（例如 'SELF'、'小華'）
+  // 向下相容舊欄位
+  personName?: string;               // 對象姓名（相容舊資料）
   debtDirection?: 'i_lent' | 'they_lent'; // 我幫人墊(應收) / 別人幫我墊(應付)
   isBadDebtWriteOff?: boolean;       // 呆帳核銷標記
   // 定期 / 分期防重複與追蹤
@@ -57,6 +60,15 @@ export interface RecurringRule {
   initialInvestedAmount?: number;    // 既有已投入金額
   initialInvestedPeriods?: number;   // 既有已繳期數
   skippedPeriods: string[];          // 跳過的月份陣列 ['2026-11']
+}
+
+export interface QuickTemplate {
+  id: string;
+  title: string;
+  type: 'expense' | 'income';
+  amount: number;
+  categoryId: string;
+  accountId?: string;
 }
 
 export interface LedgerData {

@@ -5,6 +5,9 @@ export interface AccountWithBalance extends Account {
   transactionCount: number;
 }
 
+/**
+ * 與「我 ('SELF')」相關的單一對象代墊互抵摘要
+ */
 export interface PersonDebtSummary {
   personName: string;
   iLentTotal: number;        // 我幫墊 / 借出總額
@@ -14,6 +17,56 @@ export interface PersonDebtSummary {
   badDebtWrittenOff: number; // 呆帳核銷總額
   netBalance: number;        // > 0 代表對方欠我(應收)，< 0 代表我欠對方(應付)，0 代表已結清
   transactions: Transaction[];
+}
+
+/**
+ * 通用兩兩代墊關係摘要（支援「我 ↔ 他人」與「他人 A ↔ 他人 B」）
+ */
+export interface PairwiseDebtRelation {
+  pairKey: string;
+  partyA: string;            // 參與方 A ('SELF' 或姓名；若含 'SELF' 固定放 partyA)
+  partyB: string;            // 參與方 B (姓名)
+  involvesSelf: boolean;     // true 代表與我有關，false 代表他人之間 (A ↔ B)
+  aPaidForBTotal: number;    // A 幫 B 代墊總額
+  bPaidForATotal: number;    // B 幫 A 代墊總額
+  bRepaidATotal: number;     // B 還給 A 總額
+  aRepaidBTotal: number;     // A 還給 B 總額
+  badDebtWrittenOff: number; // 呆帳核銷總額 (A 核銷 B 的欠款)
+  netBalance: number;        // > 0 代表 partyB 欠 partyA；< 0 代表 partyA 欠 partyB；0 代表已結清
+  creditor: string | null;   // 債權人（應收方）
+  debtor: string | null;     // 債務人（應付欠錢方）
+  absNetAmount: number;      // 互抵後淨欠款絕對值
+  isSettled: boolean;        // 是否已結清 (absNetAmount === 0)
+  transactions: Transaction[];
+}
+
+/**
+ * 單一參與者（含 'SELF' 與所有聯絡人）在全體關係中的總應收、總應付與最終淨額
+ */
+export interface ParticipantNetSummary {
+  name: string;              // 'SELF' 或聯絡人姓名
+  displayName: string;       // '我' 或聯絡人姓名
+  isSelf: boolean;
+  totalReceivable: number;   // 別人欠該參與者的總和
+  totalPayable: number;      // 該參與者欠別人的總和
+  netPosition: number;       // totalReceivable - totalPayable
+}
+
+/**
+ * 多方代墊中心完整儀表板指標
+ */
+export interface MultiPartyDebtOverview {
+  myTotalReceivable: number;          // 別人欠我（應收）
+  myTotalPayable: number;             // 我欠別人（應付）
+  myNetSettlement: number;            // 我的淨結算金額
+  myBadDebtWrittenOff: number;        // 我的呆帳核銷總額
+  thirdPartyUnsettledTotal: number;   // 他人之間 (A ↔ B) 未結清總額
+  totalUnsettledRelationsCount: number; // 總計未結清關係筆數（含與我有關＋他人之間）
+  myRelations: PairwiseDebtRelation[];
+  thirdPartyRelations: PairwiseDebtRelation[];
+  allRelations: PairwiseDebtRelation[];
+  participantSummaries: ParticipantNetSummary[];
+  allContactNames: string[];          // 所有出現過的非本人聯絡人姓名清單
 }
 
 export interface BusinessSummary {
@@ -55,13 +108,13 @@ export interface InstallmentGroupSummary {
 
 export interface MonthlyOverviewMetrics {
   monthKey: string;
-  totalNetWorth: number;           // 總資產淨值（含個人、周轉金、投資、加密、扣除卡債、加上應收減應付）
+  totalNetWorth: number;           // 總資產淨值（含個人、周轉金、投資、加密、扣除卡債、加上我的應收減應付）
   personalLiquidAssets: number;    // 個人可用現金與銀行（不含副業周轉金）
   businessWorkingCapital: number;  // 副業營運周轉金
   investmentAndCrypto: number;     // 投資與加密資產
   creditCardDebt: number;          // 信用卡待繳帳款（正數表示負債額）
-  netReceivable: number;           // 應收代墊總額
-  netPayable: number;              // 應付欠款總額
+  netReceivable: number;           // 我的應收代墊總額
+  netPayable: number;              // 我的應付欠款總額
   // 本月個人+總體收支
   monthlyPersonalIncome: number;
   monthlyFixedIncome: number;
@@ -72,8 +125,68 @@ export interface MonthlyOverviewMetrics {
   monthlyNetSavings: number;
 }
 
+export interface PeriodRowStat {
+  key: string;
+  label: string;
+  income: number;
+  expense: number;
+  net: number;
+}
+
+export interface YearlyStatistics {
+  year: number;
+  totalIncome: number;
+  totalExpense: number;
+  netSavings: number;
+  savingsRate: number; // 百分比 (-100 ~ 100)
+  quarterlyRows: PeriodRowStat[];
+  monthlyRows: PeriodRowStat[];
+}
+
+/**
+ * 將任意代墊或還款交易正規化為 { payer, debtor }
+ * - 對於 type === 'debt': payer 為實際出錢代墊者，debtor 為欠錢應分攤者
+ * - 對於 type === 'repay': payer 為實際掏錢還款者(原債務人)，debtor 為收到還款者(原債權人)
+ */
+export function resolveDebtParties(tx: Transaction): { payer: string; debtor: string } | null {
+  if (tx.type !== 'debt' && tx.type !== 'repay') return null;
+
+  const rawPayer = tx.payerName?.trim();
+  const rawDebtor = tx.debtorName?.trim();
+
+  if (rawPayer && rawDebtor && rawPayer !== rawDebtor) {
+    return { payer: rawPayer, debtor: rawDebtor };
+  }
+
+  // 向下相容舊格式 personName + debtDirection
+  const legacyPerson = tx.personName?.trim();
+  if (!legacyPerson) return null;
+
+  if (tx.type === 'debt') {
+    if (tx.debtDirection === 'they_lent') {
+      return { payer: legacyPerson, debtor: 'SELF' };
+    }
+    return { payer: 'SELF', debtor: legacyPerson };
+  } else {
+    // tx.type === 'repay'
+    if (tx.debtDirection === 'they_lent') {
+      // 我還對方錢 -> payer: 'SELF', debtor: legacyPerson
+      return { payer: 'SELF', debtor: legacyPerson };
+    }
+    // 對方還我錢 (或呆帳核銷) -> payer: legacyPerson, debtor: 'SELF'
+    return { payer: legacyPerson, debtor: 'SELF' };
+  }
+}
+
+export function formatPartyDisplayName(name: string): string {
+  return name === 'SELF' ? '我' : name;
+}
+
 /**
  * 計算單一帳戶的動態餘額與交易筆數
+ * 嚴格遵守帳務隔離原則：
+ * - 只有當 payerName === 'SELF'（我付錢）或還款涉及 'SELF' 時，才影響我的帳戶動態餘額。
+ * - 第三方代墊（A 幫 B 墊錢，雙方皆非 'SELF'）完全不影響我的個人帳戶餘額。
  */
 export function calculateAccountBalances(
   accounts: Account[],
@@ -100,44 +213,60 @@ export function calculateAccountBalances(
       }
     };
 
-    incCount(tx.accountId);
-    if (tx.toAccountId && tx.toAccountId !== tx.accountId) {
-      incCount(tx.toAccountId);
-    }
-
     switch (tx.type) {
       case 'expense':
+        incCount(tx.accountId);
         addBal(tx.accountId, -tx.amount);
         break;
       case 'income':
+        incCount(tx.accountId);
         addBal(tx.accountId, tx.amount);
         break;
       case 'transfer':
+        incCount(tx.accountId);
+        if (tx.toAccountId && tx.toAccountId !== tx.accountId) {
+          incCount(tx.toAccountId);
+        }
         addBal(tx.accountId, -tx.amount);
         addBal(tx.toAccountId, tx.amount);
         break;
-      case 'debt':
-        // 我幫人代墊或借錢給人：錢從我的帳戶流出
-        if (tx.debtDirection === 'i_lent') {
+      case 'debt': {
+        const parties = resolveDebtParties(tx);
+        if (!parties) break;
+        // 只有「我」先出錢幫別人代墊時，我的帳戶餘額才會扣款
+        if (parties.payer === 'SELF' && parties.debtor !== 'SELF') {
+          incCount(tx.accountId);
           addBal(tx.accountId, -tx.amount);
         }
-        // 別人幫我代墊 (they_lent)：當下我的帳戶餘額不變，但產生一筆應付欠款
+        // 若別人幫我墊 (payer !== 'SELF', debtor === 'SELF')：我當下沒出錢，而是產生應付負債
+        // 若自己分攤 (payer === 'SELF', debtor === 'SELF')：若不小心以此型別傳入，視同支出扣款
+        else if (parties.payer === 'SELF' && parties.debtor === 'SELF') {
+          incCount(tx.accountId);
+          addBal(tx.accountId, -tx.amount);
+        }
+        // 若第三方 A 幫 B 代墊 (payer !== 'SELF' && debtor !== 'SELF')：完全不影響我的帳戶
         break;
-      case 'repay':
+      }
+      case 'repay': {
         if (tx.isBadDebtWriteOff) {
-          // 呆帳核銷：僅沖銷應收帳款，無實際金流入帳
           break;
         }
-        if (tx.debtDirection === 'i_lent') {
-          // 對方還我錢：資金流入我的帳戶
+        const parties = resolveDebtParties(tx);
+        if (!parties) break;
+        if (parties.debtor === 'SELF' && parties.payer !== 'SELF') {
+          // 別人還我錢 -> 我的收款帳戶餘額增加
+          incCount(tx.accountId);
           addBal(tx.accountId, tx.amount);
-        } else if (tx.debtDirection === 'they_lent') {
-          // 我還對方錢：資金從我的帳戶流出
+        } else if (parties.payer === 'SELF' && parties.debtor !== 'SELF') {
+          // 我還別人錢 -> 我的付款帳戶餘額減少
+          incCount(tx.accountId);
           addBal(tx.accountId, -tx.amount);
         }
+        // 若第三方 B 還錢給 A (雙方皆非 'SELF') -> 完全不影響我的帳戶
         break;
+      }
       case 'adjustment':
-        // 若 toAccountId === accountId 代表調增 (+amount)，否則代表調減 (-amount)
+        incCount(tx.accountId);
         if (tx.toAccountId === tx.accountId) {
           addBal(tx.accountId, tx.amount);
         } else {
@@ -155,65 +284,204 @@ export function calculateAccountBalances(
 }
 
 /**
- * 計算所有往來對象的雙向代墊互抵與淨欠款
+ * 計算全方位多方代墊關係（支援「我 ↔ 他人」與「他人 A ↔ 他人 B」）與所有參與者淨額總計
  */
-export function calculatePersonDebts(transactions: Transaction[]): PersonDebtSummary[] {
-  const personMap = new Map<string, PersonDebtSummary>();
+export function calculateMultiPartyDebtOverview(
+  transactions: Transaction[]
+): MultiPartyDebtOverview {
+  const pairMap = new Map<string, PairwiseDebtRelation>();
+  const contactSet = new Set<string>();
 
   for (const tx of transactions) {
-    if ((tx.type !== 'debt' && tx.type !== 'repay') || !tx.personName?.trim()) {
-      continue;
+    const parties = resolveDebtParties(tx);
+    if (!parties) continue;
+
+    const { payer, debtor } = parties;
+    if (payer !== 'SELF') contactSet.add(payer);
+    if (debtor !== 'SELF') contactSet.add(debtor);
+
+    // 建立固定順序的 pairKey：若包含 'SELF' 則 'SELF' 固定為 partyA；否則依字母/字元排序
+    let partyA: string;
+    let partyB: string;
+    if (payer === 'SELF' || debtor === 'SELF') {
+      partyA = 'SELF';
+      partyB = payer === 'SELF' ? debtor : payer;
+    } else {
+      const sorted = [payer, debtor].sort((a, b) => a.localeCompare(b, 'zh-Hant'));
+      partyA = sorted[0];
+      partyB = sorted[1];
     }
-    const name = tx.personName.trim();
-    if (!personMap.has(name)) {
-      personMap.set(name, {
-        personName: name,
-        iLentTotal: 0,
-        theyLentTotal: 0,
-        repaidToMeTotal: 0,
-        iRepaidTotal: 0,
+
+    const pairKey = `${partyA}__${partyB}`;
+    if (!pairMap.has(pairKey)) {
+      pairMap.set(pairKey, {
+        pairKey,
+        partyA,
+        partyB,
+        involvesSelf: partyA === 'SELF',
+        aPaidForBTotal: 0,
+        bPaidForATotal: 0,
+        bRepaidATotal: 0,
+        aRepaidBTotal: 0,
         badDebtWrittenOff: 0,
         netBalance: 0,
+        creditor: null,
+        debtor: null,
+        absNetAmount: 0,
+        isSettled: true,
         transactions: [],
       });
     }
-    const summary = personMap.get(name)!;
-    summary.transactions.push(tx);
+
+    const rel = pairMap.get(pairKey)!;
+    rel.transactions.push(tx);
 
     if (tx.type === 'debt') {
-      if (tx.debtDirection === 'i_lent') {
-        summary.iLentTotal += tx.amount;
-      } else if (tx.debtDirection === 'they_lent') {
-        summary.theyLentTotal += tx.amount;
+      if (payer === partyA && debtor === partyB) {
+        // A 幫 B 代墊 -> B 欠 A 增加
+        rel.aPaidForBTotal += tx.amount;
+      } else if (payer === partyB && debtor === partyA) {
+        // B 幫 A 代墊 -> A 欠 B 增加
+        rel.bPaidForATotal += tx.amount;
       }
     } else if (tx.type === 'repay') {
       if (tx.isBadDebtWriteOff) {
-        summary.badDebtWrittenOff += tx.amount;
-      } else if (tx.debtDirection === 'i_lent') {
-        summary.repaidToMeTotal += tx.amount;
-      } else if (tx.debtDirection === 'they_lent') {
-        summary.iRepaidTotal += tx.amount;
+        if (payer === partyB && debtor === partyA) {
+          rel.badDebtWrittenOff += tx.amount;
+        } else if (payer === partyA && debtor === partyB) {
+          rel.badDebtWrittenOff -= tx.amount;
+        }
+      } else if (payer === partyB && debtor === partyA) {
+        // B 還錢給 A
+        rel.bRepaidATotal += tx.amount;
+      } else if (payer === partyA && debtor === partyB) {
+        // A 還錢給 B
+        rel.aRepaidBTotal += tx.amount;
       }
     }
   }
 
-  const results: PersonDebtSummary[] = [];
-  for (const summary of personMap.values()) {
-    // 淨額 = (我借出 - 對方已還 - 呆帳核銷) - (對方借我 - 我已還)
-    const myReceivable = summary.iLentTotal - summary.repaidToMeTotal - summary.badDebtWrittenOff;
-    const myPayable = summary.theyLentTotal - summary.iRepaidTotal;
-    summary.netBalance = myReceivable - myPayable;
-    summary.transactions.sort((a, b) => b.date.localeCompare(a.date));
-    results.push(summary);
+  const allRelations: PairwiseDebtRelation[] = [];
+  for (const rel of pairMap.values()) {
+    const bOwesA = rel.aPaidForBTotal - rel.bRepaidATotal - rel.badDebtWrittenOff;
+    const aOwesB = rel.bPaidForATotal - rel.aRepaidBTotal;
+    const net = bOwesA - aOwesB; // > 0 代表 B 欠 A；< 0 代表 A 欠 B
+
+    rel.netBalance = net;
+    rel.absNetAmount = Math.abs(net);
+    rel.isSettled = net === 0;
+    rel.creditor = net > 0 ? rel.partyA : net < 0 ? rel.partyB : null;
+    rel.debtor = net > 0 ? rel.partyB : net < 0 ? rel.partyA : null;
+    rel.transactions.sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
+    allRelations.push(rel);
   }
 
-  // 未結清的排前面，並依絕對金額大小排序
-  return results.sort((a, b) => {
-    const aActive = a.netBalance !== 0 ? 1 : 0;
-    const bActive = b.netBalance !== 0 ? 1 : 0;
-    if (aActive !== bActive) return bActive - aActive;
-    return Math.abs(b.netBalance) - Math.abs(a.netBalance);
-  });
+  const sortRelations = (list: PairwiseDebtRelation[]) =>
+    list.sort((a, b) => {
+      const aActive = !a.isSettled ? 1 : 0;
+      const bActive = !b.isSettled ? 1 : 0;
+      if (aActive !== bActive) return bActive - aActive;
+      return b.absNetAmount - a.absNetAmount;
+    });
+
+  sortRelations(allRelations);
+
+  const myRelations = allRelations.filter((r) => r.involvesSelf);
+  const thirdPartyRelations = allRelations.filter((r) => !r.involvesSelf);
+
+  let myTotalReceivable = 0;
+  let myTotalPayable = 0;
+  let myBadDebtWrittenOff = 0;
+
+  for (const r of myRelations) {
+    myBadDebtWrittenOff += Math.max(0, r.badDebtWrittenOff);
+    if (r.netBalance > 0) {
+      myTotalReceivable += r.netBalance;
+    } else if (r.netBalance < 0) {
+      myTotalPayable += Math.abs(r.netBalance);
+    }
+  }
+
+  const myNetSettlement = myTotalReceivable - myTotalPayable;
+
+  const thirdPartyUnsettledTotal = thirdPartyRelations
+    .filter((r) => !r.isSettled)
+    .reduce((sum, r) => sum + r.absNetAmount, 0);
+
+  const totalUnsettledRelationsCount = allRelations.filter((r) => !r.isSettled).length;
+
+  // 計算所有參與者（含 'SELF' 與所有聯絡人）的總應收、總應付與最終淨額
+  const participantMap = new Map<string, ParticipantNetSummary>();
+  const ensureParticipant = (name: string) => {
+    if (!participantMap.has(name)) {
+      participantMap.set(name, {
+        name,
+        displayName: formatPartyDisplayName(name),
+        isSelf: name === 'SELF',
+        totalReceivable: 0,
+        totalPayable: 0,
+        netPosition: 0,
+      });
+    }
+    return participantMap.get(name)!;
+  };
+
+  if (myRelations.length > 0 || allRelations.length > 0) {
+    ensureParticipant('SELF');
+  }
+  for (const c of contactSet) {
+    ensureParticipant(c);
+  }
+
+  for (const rel of allRelations) {
+    if (rel.isSettled || !rel.creditor || !rel.debtor) continue;
+    const cred = ensureParticipant(rel.creditor);
+    const debt = ensureParticipant(rel.debtor);
+    cred.totalReceivable += rel.absNetAmount;
+    debt.totalPayable += rel.absNetAmount;
+  }
+
+  const participantSummaries = Array.from(participantMap.values())
+    .map((p) => ({
+      ...p,
+      netPosition: p.totalReceivable - p.totalPayable,
+    }))
+    .sort((a, b) => {
+      if (a.isSelf !== b.isSelf) return a.isSelf ? -1 : 1;
+      return Math.abs(b.netPosition) - Math.abs(a.netPosition);
+    });
+
+  return {
+    myTotalReceivable,
+    myTotalPayable,
+    myNetSettlement,
+    myBadDebtWrittenOff,
+    thirdPartyUnsettledTotal,
+    totalUnsettledRelationsCount,
+    myRelations,
+    thirdPartyRelations,
+    allRelations,
+    participantSummaries,
+    allContactNames: Array.from(contactSet),
+  };
+}
+
+/**
+ * 計算與「我 ('SELF')」相關的往來對象摘要（提供總覽淨值與向下相容使用）
+ * 嚴格隔離：第三方 A <-> B 代墊絕不會混入我的個人應收應付！
+ */
+export function calculatePersonDebts(transactions: Transaction[]): PersonDebtSummary[] {
+  const overview = calculateMultiPartyDebtOverview(transactions);
+  return overview.myRelations.map((rel) => ({
+    personName: rel.partyB,
+    iLentTotal: rel.aPaidForBTotal,
+    theyLentTotal: rel.bPaidForATotal,
+    repaidToMeTotal: rel.bRepaidATotal,
+    iRepaidTotal: rel.aRepaidBTotal,
+    badDebtWrittenOff: rel.badDebtWrittenOff,
+    netBalance: rel.netBalance,
+    transactions: rel.transactions,
+  }));
 }
 
 /**
@@ -375,6 +643,9 @@ export function calculateInstallmentGroups(transactions: Transaction[]): Install
 
 /**
  * 計算總覽頁面的所有核心財務指標
+ * 嚴格遵守帳務隔離原則：
+ * - 只有本人的收入與本人的支出（含他人墊付中屬於「我 ('SELF')」分攤到的個人支出）計入月收支。
+ * - 第三方代墊 (A <-> B) 完全不影響我的淨值與月收支。
  */
 export function calculateMonthlyOverview(
   accountsWithBalance: AccountWithBalance[],
@@ -398,7 +669,6 @@ export function calculateMonthlyOverview(
     } else if (acc.type === 'investment' || acc.type === 'crypto') {
       investmentAndCrypto += acc.currentBalance;
     } else if (acc.type === 'credit_card') {
-      // 信用卡餘額通常為負數代表待繳，若為負數則轉為正數顯示待繳金額
       creditCardDebt += acc.currentBalance < 0 ? Math.abs(acc.currentBalance) : 0;
     }
   }
@@ -431,7 +701,7 @@ export function calculateMonthlyOverview(
   for (const tx of transactions) {
     if (!tx.date.startsWith(monthKey)) continue;
     const cat = tx.categoryId ? catMap.get(tx.categoryId) : undefined;
-    const isBiz = Boolean(cat?.isBusiness || bizAccIds.has(tx.accountId));
+    const isBiz = Boolean(cat?.isBusiness || (tx.accountId && bizAccIds.has(tx.accountId)));
 
     if (tx.type === 'income') {
       if (isBiz) {
@@ -449,6 +719,16 @@ export function calculateMonthlyOverview(
         monthlyBusinessExpense += tx.amount;
       } else {
         monthlyPersonalExpense += tx.amount;
+      }
+    } else if (tx.type === 'debt') {
+      // 當別人幫我代墊 (debtor === 'SELF', payer !== 'SELF') 時，若該筆為我自己分攤到的消費，計入我的個人支出
+      const parties = resolveDebtParties(tx);
+      if (parties && parties.debtor === 'SELF' && parties.payer !== 'SELF' && tx.categoryId) {
+        if (isBiz) {
+          monthlyBusinessExpense += tx.amount;
+        } else {
+          monthlyPersonalExpense += tx.amount;
+        }
       }
     }
   }
@@ -479,6 +759,92 @@ export function calculateMonthlyOverview(
 }
 
 /**
+ * 計算年度與季度/月度統計總覽與明細表
+ */
+export function calculateYearlyStatistics(
+  accounts: Account[],
+  categories: Category[],
+  transactions: Transaction[],
+  year: number,
+  includeBusiness: boolean
+): YearlyStatistics {
+  const catMap = new Map(categories.map((c) => [c.id, c]));
+  const bizAccIds = new Set(
+    accounts
+      .filter((a) => a.isBusinessWorkingCapital || a.type === 'business_cashbox')
+      .map((a) => a.id)
+  );
+
+  const monthIncome = new Array(12).fill(0);
+  const monthExpense = new Array(12).fill(0);
+
+  const yearPrefix = `${year}-`;
+
+  for (const tx of transactions) {
+    if (!tx.date.startsWith(yearPrefix)) continue;
+
+    const cat = tx.categoryId ? catMap.get(tx.categoryId) : undefined;
+    const isBiz = Boolean(cat?.isBusiness || (tx.accountId && bizAccIds.has(tx.accountId)));
+    if (!includeBusiness && isBiz) continue;
+
+    const mIdx = parseInt(tx.date.slice(5, 7), 10) - 1;
+    if (mIdx < 0 || mIdx > 11) continue;
+
+    if (tx.type === 'income') {
+      monthIncome[mIdx] += tx.amount;
+    } else if (tx.type === 'expense') {
+      monthExpense[mIdx] += tx.amount;
+    } else if (tx.type === 'debt') {
+      const parties = resolveDebtParties(tx);
+      if (parties && parties.debtor === 'SELF' && parties.payer !== 'SELF' && tx.categoryId) {
+        monthExpense[mIdx] += tx.amount;
+      }
+    }
+  }
+
+  const monthlyRows: PeriodRowStat[] = Array.from({ length: 12 }, (_, idx) => {
+    const inc = monthIncome[idx];
+    const exp = monthExpense[idx];
+    return {
+      key: `M${idx + 1}`,
+      label: `${idx + 1}月`,
+      income: inc,
+      expense: exp,
+      net: inc - exp,
+    };
+  });
+
+  const quarterlyRows: PeriodRowStat[] = [0, 1, 2, 3].map((qIdx) => {
+    const mStart = qIdx * 3;
+    const inc = monthIncome[mStart] + monthIncome[mStart + 1] + monthIncome[mStart + 2];
+    const exp = monthExpense[mStart] + monthExpense[mStart + 1] + monthExpense[mStart + 2];
+    return {
+      key: `Q${qIdx + 1}`,
+      label: `Q${qIdx + 1} (${mStart + 1}-${mStart + 3}月)`,
+      income: inc,
+      expense: exp,
+      net: inc - exp,
+    };
+  });
+
+  const totalIncome = monthIncome.reduce((a, b) => a + b, 0);
+  const totalExpense = monthExpense.reduce((a, b) => a + b, 0);
+  const netSavings = totalIncome - totalExpense;
+  const savingsRate =
+    totalIncome > 0 ? Math.round((netSavings / totalIncome) * 100) : 0;
+
+  return {
+    year,
+    totalIncome,
+    totalExpense,
+    netSavings,
+    savingsRate,
+    quarterlyRows,
+    monthlyRows,
+  };
+}
+
+/**
  * 計算當月支出分類佔比（供圓餅圖與排行使用）
  */
 export function calculateCategoryBreakdown(
@@ -491,7 +857,17 @@ export function calculateCategoryBreakdown(
   const totals = new Map<string, number>();
 
   for (const tx of transactions) {
-    if (tx.type !== 'expense' || !tx.date.startsWith(monthKey)) continue;
+    if (!tx.date.startsWith(monthKey)) continue;
+
+    let isMyExpense = tx.type === 'expense';
+    if (tx.type === 'debt') {
+      const parties = resolveDebtParties(tx);
+      if (parties && parties.debtor === 'SELF' && parties.payer !== 'SELF' && tx.categoryId) {
+        isMyExpense = true;
+      }
+    }
+    if (!isMyExpense) continue;
+
     const cat = tx.categoryId ? catMap.get(tx.categoryId) : undefined;
     const isBiz = Boolean(cat?.isBusiness);
 

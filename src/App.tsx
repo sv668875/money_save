@@ -13,11 +13,13 @@ import {
   calculateAccountBalances,
   calculateBusinessSummary,
   calculateMonthlyOverview,
+  calculateMultiPartyDebtOverview,
   calculatePersonDebts,
   calculateRecurringMetrics,
+  formatPartyDisplayName,
   formatTWD,
   InstallmentGroupSummary,
-  PersonDebtSummary,
+  PairwiseDebtRelation,
   RecurringRuleWithMetrics,
 } from './calculations';
 import { BusinessTab } from './components/BusinessTab';
@@ -36,10 +38,13 @@ import {
   Category,
   ConfirmModalConfig,
   LedgerData,
+  QuickTemplate,
   RecurringRule,
   ToastMessage,
   Transaction,
 } from './types';
+
+const TEMPLATES_STORAGE_KEY = 'simple_ledger_templates_v2';
 
 export default function App() {
   const [data, setData] = useState<LedgerData>(() => StorageService.loadAll());
@@ -50,6 +55,17 @@ export default function App() {
   });
   const [enableBusinessModule, setEnableBusinessModule] = useState<boolean>(() => {
     return localStorage.getItem('simple_ledger_biz_module') === 'true';
+  });
+  const [monthStartDay, setMonthStartDay] = useState<number>(() => {
+    return parseInt(localStorage.getItem('simple_ledger_start_day') || '1', 10) || 1;
+  });
+  const [templates, setTemplates] = useState<QuickTemplate[]>(() => {
+    try {
+      const raw = localStorage.getItem(TEMPLATES_STORAGE_KEY);
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
   });
 
   // QuickAddDrawer state
@@ -84,6 +100,30 @@ export default function App() {
     }
   }, [enableBusinessModule, activeTab]);
 
+  const handleChangeMonthStartDay = (day: number) => {
+    setMonthStartDay(day);
+    localStorage.setItem('simple_ledger_start_day', String(day));
+    showToast(`每月起始日已設為 ${day} 日`, 'info');
+  };
+
+  const handleAddTemplate = (tpl: QuickTemplate) => {
+    setTemplates((prev) => {
+      const next = [...prev, tpl];
+      localStorage.setItem(TEMPLATES_STORAGE_KEY, JSON.stringify(next));
+      return next;
+    });
+    showToast(`已新增${tpl.type === 'income' ? '收入' : '支出'}快捷「${tpl.title}」`);
+  };
+
+  const handleDeleteTemplate = (id: string) => {
+    setTemplates((prev) => {
+      const next = prev.filter((t) => t.id !== id);
+      localStorage.setItem(TEMPLATES_STORAGE_KEY, JSON.stringify(next));
+      return next;
+    });
+    showToast('已移除快捷範本', 'info');
+  };
+
   const showToast = (text: string, type: ToastMessage['type'] = 'success') => {
     const id = `toast_${Date.now()}_${Math.random()}`;
     setToasts((prev) => [...prev, { id, text, type }]);
@@ -108,6 +148,11 @@ export default function App() {
   const accountsWithBalance = useMemo(
     () => calculateAccountBalances(data.accounts, data.transactions),
     [data.accounts, data.transactions]
+  );
+
+  const multiPartyDebtOverview = useMemo(
+    () => calculateMultiPartyDebtOverview(data.transactions),
+    [data.transactions]
   );
 
   const personDebts = useMemo(
@@ -160,8 +205,8 @@ export default function App() {
   );
 
   const existingPeople = useMemo(
-    () => personDebts.map((p) => p.personName),
-    [personDebts]
+    () => multiPartyDebtOverview.allContactNames,
+    [multiPartyDebtOverview]
   );
 
   // Handlers for Transactions
@@ -190,7 +235,14 @@ export default function App() {
         ...prev,
         transactions: [...newTxs, ...prev.transactions],
       }));
-      showToast(newTxs.length > 1 ? `已新增 ${newTxs.length} 期分期` : '記帳完成');
+      const hasSplitDebt = newTxs.length > 1 && newTxs.some((t) => t.type === 'debt');
+      showToast(
+        hasSplitDebt
+          ? `已完成拆帳（共 ${newTxs.length} 筆紀錄）`
+          : newTxs.length > 1
+          ? `已新增 ${newTxs.length} 期分期`
+          : '記帳完成'
+      );
     }
   };
 
@@ -426,49 +478,72 @@ export default function App() {
     showToast(`已入帳第 ${nextIdx}/${group.totalPeriods} 期`);
   };
 
-  // Handlers for Debt Settlement & Bad Debt Write-Off
-  const handleSettleDebt = (person: PersonDebtSummary, settleAccountId: string) => {
-    if (person.netBalance === 0) return;
-    const isReceivable = person.netBalance > 0;
-    const absAmount = Math.abs(person.netBalance);
-    const accName =
-      data.accounts.find((a) => a.id === settleAccountId)?.name || '預設帳戶';
+  // Handlers for Multi-Party Debt Repayment (supports both Self<->Other and Other A<->Other B) & Bad Debt Write-Off
+  const handleConfirmPairRepayment = (
+    relation: PairwiseDebtRelation,
+    selectedAccountId: string,
+    amount: number,
+    date: string,
+    note: string
+  ) => {
+    if (!relation.debtor || !relation.creditor) return;
 
-    setConfirmConfig({
-      isOpen: true,
-      title: `結清「${person.personName}」款項？`,
-      description: isReceivable
-        ? `${person.personName} 還款 ${formatTWD(absAmount)} 存入「${accName}」。`
-        : `還款給 ${person.personName} ${formatTWD(absAmount)} 自「${accName}」扣款。`,
-      confirmLabel: '結清',
-      danger: false,
-      onConfirm: () => {
-        const settleTx: Transaction = {
-          id: `tx_repay_${Date.now()}`,
-          type: 'repay',
-          amount: absAmount,
-          date: getTodayDateString(),
-          accountId: settleAccountId,
-          personName: person.personName,
-          debtDirection: isReceivable ? 'i_lent' : 'they_lent',
-          note: '互抵結清',
-        };
-        updateData((prev) => ({
-          ...prev,
-          transactions: [settleTx, ...prev.transactions],
-        }));
-        showToast(`已結清「${person.personName}」款項`);
-      },
-    });
+    const payer = relation.debtor;     // 還錢的人（原欠款方）
+    const receiver = relation.creditor; // 收錢的人（原債權方）
+    const involvesSelf = relation.involvesSelf;
+
+    const accName =
+      involvesSelf && selectedAccountId
+        ? data.accounts.find((a) => a.id === selectedAccountId)?.name || '選定帳戶'
+        : '';
+
+    const repayTx: Transaction = {
+      id: `tx_repay_${Date.now()}`,
+      type: 'repay',
+      amount,
+      date,
+      accountId: involvesSelf ? selectedAccountId : '',
+      payerName: payer,
+      debtorName: receiver,
+      personName: involvesSelf
+        ? relation.partyB
+        : `${formatPartyDisplayName(payer)}→${formatPartyDisplayName(receiver)}`,
+      debtDirection: involvesSelf
+        ? receiver === 'SELF'
+          ? 'i_lent'
+          : 'they_lent'
+        : undefined,
+      note,
+    };
+
+    updateData((prev) => ({
+      ...prev,
+      transactions: [repayTx, ...prev.transactions],
+    }));
+
+    if (involvesSelf) {
+      showToast(
+        receiver === 'SELF'
+          ? `已收款 ${formatTWD(amount)} 存入「${accName}」`
+          : `已付款 ${formatTWD(amount)} 自「${accName}」扣除`
+      );
+    } else {
+      showToast(
+        `已記錄「${formatPartyDisplayName(payer)} 還給 ${formatPartyDisplayName(
+          receiver
+        )}」${formatTWD(amount)}`
+      );
+    }
   };
 
-  const handleWriteOffBadDebt = (person: PersonDebtSummary) => {
-    if (person.netBalance <= 0) return;
-    const absAmount = Math.abs(person.netBalance);
+  const handleWriteOffBadDebt = (relation: PairwiseDebtRelation) => {
+    if (!relation.involvesSelf || relation.creditor !== 'SELF' || !relation.debtor) return;
+    const absAmount = relation.absNetAmount;
+    const targetPerson = relation.debtor;
 
     setConfirmConfig({
       isOpen: true,
-      title: `將「${person.personName}」列為呆帳？`,
+      title: `將「${targetPerson}」列為呆帳？`,
       description: `沖銷應收 ${formatTWD(absAmount)}，不影響現金餘額。`,
       confirmLabel: '核銷',
       danger: true,
@@ -478,8 +553,10 @@ export default function App() {
           type: 'repay',
           amount: absAmount,
           date: getTodayDateString(),
-          accountId: data.accounts[0]?.id || 'acc_richart',
-          personName: person.personName,
+          accountId: '',
+          payerName: targetPerson,
+          debtorName: 'SELF',
+          personName: targetPerson,
           debtDirection: 'i_lent',
           isBadDebtWriteOff: true,
           note: '呆帳核銷',
@@ -611,14 +688,14 @@ export default function App() {
           onClose={() => setConfirmConfig((prev) => ({ ...prev, isOpen: false }))}
         />
 
-        {/* Minimal Top App Bar: Pure SVG Logo on left, single "+ 記帳" action on right */}
-        <header className="sticky top-0 z-30 h-14 px-4 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800 flex items-center justify-between">
+        {/* Minimal Top App Bar: Pure SVG Logo on left, sleek "+ 記帳" button on right */}
+        <header className="sticky top-0 z-30 h-13 px-4 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800 flex items-center justify-between">
           <BrandLogo />
 
           <button
             type="button"
             onClick={() => handleOpenQuickAdd()}
-            className="min-h-[36px] px-3.5 rounded-xl bg-slate-900 dark:bg-emerald-600 text-white text-xs font-bold flex items-center gap-1 shadow-xs hover:opacity-95 active:scale-[0.98] transition whitespace-nowrap"
+            className="h-8 px-3 rounded-xl bg-slate-900 dark:bg-emerald-600 text-white text-xs font-bold flex items-center gap-1 shadow-xs hover:opacity-95 active:scale-[0.98] transition whitespace-nowrap"
           >
             <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
             <span>記帳</span>
@@ -626,7 +703,7 @@ export default function App() {
         </header>
 
         {/* Main Content Viewport */}
-        <main className="flex-1 p-3.5 pb-24">
+        <main className="flex-1 p-3.5 pb-20">
           {activeTab === 'overview' && (
             <OverviewTab
               monthKey={monthKey}
@@ -674,11 +751,11 @@ export default function App() {
 
           {activeTab === 'debts' && (
             <DebtsTab
-              personDebts={personDebts}
+              debtOverview={multiPartyDebtOverview}
               accounts={data.accounts}
               enableBusinessModule={enableBusinessModule}
               onOpenQuickAdd={handleOpenQuickAdd}
-              onSettleDebt={handleSettleDebt}
+              onConfirmPairRepayment={handleConfirmPairRepayment}
               onWriteOffBadDebt={handleWriteOffBadDebt}
             />
           )}
@@ -701,6 +778,11 @@ export default function App() {
           {activeTab === 'settings' && (
             <SettingsTab
               categories={data.categories}
+              monthStartDay={monthStartDay}
+              onChangeMonthStartDay={handleChangeMonthStartDay}
+              templates={templates}
+              onAddTemplate={handleAddTemplate}
+              onDeleteTemplate={handleDeleteTemplate}
               darkMode={darkMode}
               onToggleDarkMode={() => setDarkMode(!darkMode)}
               enableBusinessModule={enableBusinessModule}
@@ -719,7 +801,7 @@ export default function App() {
         {/* Fixed Bottom Navigation Bar with iOS Safe Area Padding */}
         <nav className="fixed bottom-0 left-0 right-0 z-40 max-w-md mx-auto bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200/80 dark:border-slate-800 pb-[env(safe-area-inset-bottom)]">
           <div
-            className={`grid items-center h-15 px-1 ${
+            className={`grid items-center h-14 px-1 ${
               enableBusinessModule ? 'grid-cols-6' : 'grid-cols-5'
             }`}
           >
@@ -731,16 +813,16 @@ export default function App() {
                   key={item.id}
                   type="button"
                   onClick={() => setActiveTab(item.id)}
-                  className={`min-h-[46px] flex flex-col items-center justify-center relative transition ${
+                  className={`py-1.5 flex flex-col items-center justify-center relative transition ${
                     isActive
                       ? 'text-emerald-600 dark:text-emerald-400 font-bold'
                       : 'text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 font-medium'
                   }`}
                 >
                   <div className="relative">
-                    <IconComp className="w-5 h-5" />
+                    <IconComp className="w-4.5 h-4.5" />
                     {item.badge && (
-                      <span className="absolute -top-1 -right-1.5 w-2 h-2 rounded-full bg-amber-500" />
+                      <span className="absolute -top-0.5 -right-1.5 w-2 h-2 rounded-full bg-amber-500" />
                     )}
                   </div>
                   <span className="text-[10px] tracking-tight mt-0.5 whitespace-nowrap">
@@ -759,6 +841,7 @@ export default function App() {
           accounts={data.accounts}
           categories={data.categories}
           existingPeople={existingPeople}
+          templates={templates}
           enableBusinessModule={enableBusinessModule}
           editingTransaction={editingTx}
           preset={quickAddPreset}
