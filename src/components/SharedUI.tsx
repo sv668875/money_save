@@ -473,7 +473,7 @@ export const ToastContainer: React.FC<{
   if (toasts.length === 0) return null;
 
   return (
-    <div className="fixed top-3 left-1/2 -translate-x-1/2 z-50 w-full max-w-sm px-4 space-y-2 pointer-events-none">
+    <div className="fixed top-[calc(0.75rem+env(safe-area-inset-top))] left-1/2 -translate-x-1/2 z-50 w-full max-w-sm px-4 space-y-2 pointer-events-none select-none">
       {toasts.map((t) => (
         <div
           key={t.id}

@@ -2,9 +2,47 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 @layer base {
+  html,
   body {
     font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "PingFang TC", "Microsoft JhengHei", sans-serif;
     -webkit-tap-highlight-color: transparent;
+    /* 防止 iOS 長按跳出「拷貝/查詢」放大鏡與藍色反白選取 */
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+    /* 防止 iOS 主畫面 PWA 上下彈性拉動露出底色 */
+    overscroll-behavior-y: none;
+    /* 加速手機點擊反應，消除 300ms 延遲與誤觸雙擊放大 */
+    touch-action: manipulation;
+  }
+
+  /* 僅允許輸入框、文字區域與下拉選單可以選取/貼上文字，且強制字體 >= 16px 防止 iOS 點擊輸入框時畫面自動放大 */
+  input,
+  textarea,
+  select,
+  [contenteditable="true"] {
+    -webkit-user-select: text;
+    user-select: text;
+    -webkit-touch-callout: default;
+  }
+
+  @media screen and (max-width: 768px) {
+    input,
+    textarea,
+    select {
+      font-size: 16px !important;
+    }
+  }
+
+  /* 長按圖片或 SVG 圖示禁止拖曳與儲存選單 */
+  img,
+  svg,
+  a,
+  button {
+    -webkit-user-drag: none;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
   }
 
   .font-mono,

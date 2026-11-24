@@ -84,12 +84,15 @@ export default function App() {
 
   useEffect(() => {
     const root = document.documentElement;
+    const themeMeta = document.querySelector('meta[name="theme-color"]');
     if (darkMode) {
       root.classList.add('dark');
       localStorage.setItem('simple_ledger_theme', 'dark');
+      if (themeMeta) themeMeta.setAttribute('content', '#0f172a');
     } else {
       root.classList.remove('dark');
       localStorage.setItem('simple_ledger_theme', 'light');
+      if (themeMeta) themeMeta.setAttribute('content', '#ffffff');
     }
   }, [darkMode]);
 
@@ -688,22 +691,24 @@ export default function App() {
           onClose={() => setConfirmConfig((prev) => ({ ...prev, isOpen: false }))}
         />
 
-        {/* Minimal Top App Bar: Pure SVG Logo on left, sleek "+ 記帳" button on right */}
-        <header className="sticky top-0 z-30 h-13 px-4 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800 flex items-center justify-between">
-          <BrandLogo />
+        {/* Minimal Top App Bar with iOS Notch / Dynamic Island Safe-Area Top Padding */}
+        <header className="sticky top-0 z-30 pt-[env(safe-area-inset-top)] bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800 select-none">
+          <div className="h-13 px-4 flex items-center justify-between">
+            <BrandLogo />
 
-          <button
-            type="button"
-            onClick={() => handleOpenQuickAdd()}
-            className="h-8 px-3 rounded-xl bg-slate-900 dark:bg-emerald-600 text-white text-xs font-bold flex items-center gap-1 shadow-xs hover:opacity-95 active:scale-[0.98] transition whitespace-nowrap"
-          >
-            <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
-            <span>記帳</span>
-          </button>
+            <button
+              type="button"
+              onClick={() => handleOpenQuickAdd()}
+              className="h-8 px-3 rounded-xl bg-slate-900 dark:bg-emerald-600 text-white text-xs font-bold flex items-center gap-1 shadow-xs hover:opacity-95 active:scale-[0.98] transition whitespace-nowrap"
+            >
+              <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+              <span>記帳</span>
+            </button>
+          </div>
         </header>
 
         {/* Main Content Viewport */}
-        <main className="flex-1 p-3.5 pb-20">
+        <main className="flex-1 p-3.5 pb-[calc(5.25rem+env(safe-area-inset-bottom))]">
           {activeTab === 'overview' && (
             <OverviewTab
               monthKey={monthKey}
