@@ -1,0 +1,6 @@
+{
+  "name": "簡帳 SimpleLedger",
+  "description": "台灣人專用的極簡個人資產、記帳、代墊互抵與副業機台周轉管理 PWA。",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
